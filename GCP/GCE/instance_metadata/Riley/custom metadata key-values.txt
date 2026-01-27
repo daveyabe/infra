@@ -1,0 +1,6 @@
+team:devops
+gh-token:github_pat_etc
+gh-url:https://github.com/N43-Studio/Riley
+enable-oslogin:true
+labels:riley-prod
+startup-script:see_bash_script
