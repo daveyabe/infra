@@ -1,0 +1,7 @@
+# Bootstrap configuration
+# Copy to terraform.tfvars and fill in values
+
+gcp_project_id = "your-gcp-project-id"
+region         = "northamerica-northeast2"
+github_org     = "N43-Studio"
+github_repo    = "infrastructure"

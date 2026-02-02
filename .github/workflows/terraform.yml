@@ -1,0 +1,307 @@
+name: Terraform
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'terraform/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'terraform/**'
+  workflow_dispatch:
+    inputs:
+      project:
+        description: 'Project to deploy'
+        required: true
+        type: choice
+        options:
+          - riley
+          - placeholder  # Add new projects here
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      action:
+        description: 'Terraform action'
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+
+env:
+  TF_VERSION: '1.7.0'
+  WORKLOAD_IDENTITY_PROVIDER: 'projects/${{ secrets.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+  SERVICE_ACCOUNT: 'terraform-github-actions@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com'
+
+jobs:
+  # Detect which project/environments changed
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      # Riley project
+      riley-dev: ${{ steps.changes.outputs.riley-dev }}
+      riley-staging: ${{ steps.changes.outputs.riley-staging }}
+      riley-prod: ${{ steps.changes.outputs.riley-prod }}
+      # Placeholder project (add new projects here)
+      placeholder-dev: ${{ steps.changes.outputs.placeholder-dev }}
+      placeholder-staging: ${{ steps.changes.outputs.placeholder-staging }}
+      placeholder-prod: ${{ steps.changes.outputs.placeholder-prod }}
+      # Modules
+      modules: ${{ steps.changes.outputs.modules }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            riley-dev:
+              - 'terraform/projects/riley/dev/**'
+              - 'terraform/modules/**'
+            riley-staging:
+              - 'terraform/projects/riley/staging/**'
+              - 'terraform/modules/**'
+            riley-prod:
+              - 'terraform/projects/riley/prod/**'
+              - 'terraform/modules/**'
+            placeholder-dev:
+              - 'terraform/projects/placeholder/dev/**'
+              - 'terraform/modules/**'
+            placeholder-staging:
+              - 'terraform/projects/placeholder/staging/**'
+              - 'terraform/modules/**'
+            placeholder-prod:
+              - 'terraform/projects/placeholder/prod/**'
+              - 'terraform/modules/**'
+            modules:
+              - 'terraform/modules/**'
+
+  # Plan job - runs on PRs
+  terraform-plan:
+    needs: detect-changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [riley, placeholder]  # Add new projects here
+        environment: [dev, staging, prod]
+    
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check if project/environment changed
+        id: check
+        run: |
+          KEY="${{ matrix.project }}-${{ matrix.environment }}"
+          case "$KEY" in
+            riley-dev) CHANGED="${{ needs.detect-changes.outputs.riley-dev }}" ;;
+            riley-staging) CHANGED="${{ needs.detect-changes.outputs.riley-staging }}" ;;
+            riley-prod) CHANGED="${{ needs.detect-changes.outputs.riley-prod }}" ;;
+            placeholder-dev) CHANGED="${{ needs.detect-changes.outputs.placeholder-dev }}" ;;
+            placeholder-staging) CHANGED="${{ needs.detect-changes.outputs.placeholder-staging }}" ;;
+            placeholder-prod) CHANGED="${{ needs.detect-changes.outputs.placeholder-prod }}" ;;
+            *) CHANGED="false" ;;
+          esac
+          
+          # Also check if the project directory exists
+          if [[ -d "terraform/projects/${{ matrix.project }}/${{ matrix.environment }}" && "$CHANGED" == "true" ]]; then
+            echo "run=true" >> $GITHUB_OUTPUT
+          else
+            echo "run=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Authenticate to Google Cloud
+        if: steps.check.outputs.run == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.SERVICE_ACCOUNT }}
+
+      - name: Setup Terraform
+        if: steps.check.outputs.run == 'true'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        if: steps.check.outputs.run == 'true'
+        working-directory: terraform/projects/${{ matrix.project }}/${{ matrix.environment }}
+        run: terraform init
+
+      - name: Terraform Format Check
+        if: steps.check.outputs.run == 'true'
+        working-directory: terraform/projects/${{ matrix.project }}/${{ matrix.environment }}
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        if: steps.check.outputs.run == 'true'
+        working-directory: terraform/projects/${{ matrix.project }}/${{ matrix.environment }}
+        run: terraform validate
+
+      - name: Terraform Plan
+        if: steps.check.outputs.run == 'true'
+        id: plan
+        working-directory: terraform/projects/${{ matrix.project }}/${{ matrix.environment }}
+        run: |
+          terraform plan -no-color -out=tfplan 2>&1 | tee plan_output.txt
+          echo "plan_output<<EOF" >> $GITHUB_OUTPUT
+          cat plan_output.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Comment Plan on PR
+        if: steps.check.outputs.run == 'true' && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `### Terraform Plan - \`${{ matrix.project }}/${{ matrix.environment }}\`
+            
+            #### Format and Style 🖌: \`${{ steps.fmt.outcome || 'success' }}\`
+            #### Initialization ⚙️: \`${{ steps.init.outcome || 'success' }}\`
+            #### Validation 🤖: \`${{ steps.validate.outcome || 'success' }}\`
+            #### Plan 📖: \`${{ steps.plan.outcome }}\`
+            
+            <details><summary>Show Plan</summary>
+            
+            \`\`\`terraform
+            ${{ steps.plan.outputs.plan_output }}
+            \`\`\`
+            
+            </details>
+            
+            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+      - name: Plan Status
+        if: steps.check.outputs.run == 'true' && steps.plan.outcome == 'failure'
+        run: exit 1
+
+  # Apply job - runs on push to main
+  terraform-apply:
+    needs: detect-changes
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1  # Apply one project/environment at a time
+      matrix:
+        project: [riley, placeholder]  # Add new projects here
+        environment: [dev, staging, prod]
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check if project/environment changed
+        id: check
+        run: |
+          KEY="${{ matrix.project }}-${{ matrix.environment }}"
+          case "$KEY" in
+            riley-dev) CHANGED="${{ needs.detect-changes.outputs.riley-dev }}" ;;
+            riley-staging) CHANGED="${{ needs.detect-changes.outputs.riley-staging }}" ;;
+            riley-prod) CHANGED="${{ needs.detect-changes.outputs.riley-prod }}" ;;
+            placeholder-dev) CHANGED="${{ needs.detect-changes.outputs.placeholder-dev }}" ;;
+            placeholder-staging) CHANGED="${{ needs.detect-changes.outputs.placeholder-staging }}" ;;
+            placeholder-prod) CHANGED="${{ needs.detect-changes.outputs.placeholder-prod }}" ;;
+            *) CHANGED="false" ;;
+          esac
+          
+          # Also check if the project directory exists
+          if [[ -d "terraform/projects/${{ matrix.project }}/${{ matrix.environment }}" && "$CHANGED" == "true" ]]; then
+            echo "run=true" >> $GITHUB_OUTPUT
+          else
+            echo "run=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Authenticate to Google Cloud
+        if: steps.check.outputs.run == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.SERVICE_ACCOUNT }}
+
+      - name: Setup Terraform
+        if: steps.check.outputs.run == 'true'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        if: steps.check.outputs.run == 'true'
+        working-directory: terraform/projects/${{ matrix.project }}/${{ matrix.environment }}
+        run: terraform init
+
+      - name: Terraform Apply
+        if: steps.check.outputs.run == 'true'
+        working-directory: terraform/projects/${{ matrix.project }}/${{ matrix.environment }}
+        run: terraform apply -auto-approve
+
+  # Manual deployment job
+  manual-deploy:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.project }}-${{ inputs.environment }}
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check project exists
+        run: |
+          if [[ ! -d "terraform/projects/${{ inputs.project }}/${{ inputs.environment }}" ]]; then
+            echo "Error: terraform/projects/${{ inputs.project }}/${{ inputs.environment }} does not exist"
+            exit 1
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.SERVICE_ACCOUNT }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        working-directory: terraform/projects/${{ inputs.project }}/${{ inputs.environment }}
+        run: terraform init
+
+      - name: Terraform ${{ inputs.action }}
+        working-directory: terraform/projects/${{ inputs.project }}/${{ inputs.environment }}
+        run: |
+          if [[ "${{ inputs.action }}" == "plan" ]]; then
+            terraform plan
+          else
+            terraform apply -auto-approve
+          fi
