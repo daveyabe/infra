@@ -1,0 +1,67 @@
+# Manual Terraform on the branch you select. Plan-only by default.
+name: Terraform Manual
+
+on:
+  push:
+    branches:
+      - gcp-gce-metadata
+  workflow_dispatch:
+    inputs:
+      project:
+        description: 'Project'
+        required: true
+        default: 'riley'
+        type: string
+      environment:
+        description: 'Environment'
+        required: true
+        default: 'dev'
+        type: string
+      action:
+        description: 'Run'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+
+env:
+  TF_VERSION: '1.7.0'
+  WORKLOAD_IDENTITY_PROVIDER: 'projects/${{ secrets.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+  SERVICE_ACCOUNT: 'terraform-github-actions@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com'
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.SERVICE_ACCOUNT }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        working-directory: terraform/projects/${{ inputs.project || 'riley' }}/${{ inputs.environment || 'dev' }}
+        run: terraform init
+
+      - name: Terraform Plan
+        working-directory: terraform/projects/${{ inputs.project || 'riley' }}/${{ inputs.environment || 'dev' }}
+        run: terraform plan -no-color
+
+      - name: Terraform Apply
+        if: inputs.action == 'apply'
+        working-directory: terraform/projects/${{ inputs.project || 'riley' }}/${{ inputs.environment || 'dev' }}
+        run: terraform apply -auto-approve -no-color
