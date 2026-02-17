@@ -4,7 +4,7 @@ This directory contains scripts and a Makefile to provision a new GCP project en
 
 ## Overview
 
-The bootstrap runs **five steps** in order. Each step is idempotent where possible, so you can re-run safely.
+The bootstrap runs **six steps** in order. Each step is idempotent where possible, so you can re-run safely.
 
 | Step | Script | Purpose |
 |------|--------|---------|
@@ -13,6 +13,7 @@ The bootstrap runs **five steps** in order. Each step is idempotent where possib
 | 3 | `03-enable-apis.sh` | Enable default + AI APIs (and optional extras). |
 | 4 | `04-SA-account-TF.sh` | Create `terraform-pro` service account and grant IAM roles. |
 | 5 | `05-workload-identity-federation-github.sh` | Set up WIF for GitHub Actions (no SA keys). |
+| 6 | `06-increase-service-quotas.sh` | Request common quota increases (Compute CPUs, instances, IPs). |
 
 ---
 
@@ -48,6 +49,7 @@ List billing accounts: `gcloud billing accounts list`
 | `GITHUB_REPO` | GitHub repository for WIF. | `infrastructure` |
 | `SERVICE_ACCOUNT_ID` | Service account used by GitHub Actions via WIF. | `terraform-github-actions` |
 | `EXTRA_APIS` | Additional APIs to enable (space-separated). | (none) |
+| `QUOTA_REGIONS` | Regions for quota increase requests (space-separated). | `us-central1 us-east1 northamerica-northeast2` |
 
 ---
 
@@ -62,7 +64,7 @@ make all    # Run all five steps in order
 
 ### Pipeline and dependencies
 
-- **`all`** — Runs: `provision` → `link-billing` → `enable-apis` → `sa-account` → `workload-identity`.
+- **`all`** — Runs: `provision` → `link-billing` → `enable-apis` → `sa-account` → `workload-identity` → `increase-quotas`.
 - Each target depends on the previous one. Running e.g. `make sa-account` will run `provision`, `link-billing`, and `enable-apis` first.
 
 | Target | What it runs |
@@ -72,6 +74,7 @@ make all    # Run all five steps in order
 | `enable-apis` | `03-enable-apis.sh` — enable APIs |
 | `sa-account` | `04-SA-account-TF.sh` — Terraform SA + roles |
 | `workload-identity` | `05-workload-identity-federation-github.sh` — WIF for GitHub |
+| `increase-quotas` | `06-increase-service-quotas.sh` — request common quota increases |
 
 The Makefile checks that `PROJECT_ID` (and `BILLING_ACCOUNT_ID` where needed) are set and prints a short error if not.
 
@@ -103,6 +106,7 @@ make link-billing PROJECT_ID=my-proj BILLING_ACCOUNT_ID=01ABCD-23EF56-789GHI
 make enable-apis PROJECT_ID=my-proj
 make sa-account PROJECT_ID=my-proj
 make workload-identity PROJECT_ID=my-proj GITHUB_ORG=my-org GITHUB_REPO=my-repo
+make increase-quotas PROJECT_ID=my-proj QUOTA_REGIONS="us-central1 northamerica-northeast2"
 ```
 
 ### Extra APIs
@@ -140,7 +144,11 @@ You can call the scripts directly if you prefer.
 5. **Workload Identity Federation**  
    `./05-workload-identity-federation-github.sh <PROJECT_ID> <GITHUB_ORG> <GITHUB_REPO> [SERVICE_ACCOUNT_ID]`
 
-Run them in this order. Steps 1–4 are idempotent where applicable; step 5 creates the WIF pool/provider and SA if they don’t exist.
+6. **Increase service quotas**  
+   `./06-increase-service-quotas.sh <PROJECT_ID> [REGION ...]`  
+   Submits quota increase requests for Compute (CPUs, instances, in-use IPs per region). Requires `gcloud components install beta`. Requests are reviewed by Google (typically 1–2 business days).
+
+Run them in this order. Steps 1–4 are idempotent where applicable; step 5 creates the WIF pool/provider and SA if they don’t exist; step 6 is idempotent (create/update preferences).
 
 ---
 

@@ -34,7 +34,7 @@ define require_billing
 endef
 
 .DEFAULT_GOAL := help
-.PHONY: help all provision link-billing enable-apis sa-account workload-identity
+.PHONY: help all provision link-billing enable-apis sa-account workload-identity increase-quotas
 
 help:
 	@echo "GCP Bootstrap — full project provisioning"
@@ -51,14 +51,16 @@ help:
 	@echo "  GITHUB_REPO            GitHub repo for WIF (default: infrastructure)"
 	@echo "  SERVICE_ACCOUNT_ID     WIF service account (default: terraform-github-actions)"
 	@echo "  EXTRA_APIS             Extra APIs for enable-apis (space-separated)"
+	@echo "  QUOTA_REGIONS          Regions for quota increases (default: us-central1 us-east1 northamerica-northeast2)"
 	@echo ""
 	@echo "Targets (run in order for fresh project):"
-	@echo "  all                    Run all steps: provision -> link-billing -> enable-apis -> sa-account -> workload-identity"
+	@echo "  all                    Run all steps: provision -> ... -> workload-identity -> increase-quotas"
 	@echo "  provision              Create project (01-provision-project.sh)"
 	@echo "  link-billing           Link billing account (02-link-billing.sh)"
 	@echo "  enable-apis            Enable default + AI APIs (03-enable-apis.sh)"
 	@echo "  sa-account             Create Terraform SA and roles (04-SA-account-TF.sh)"
 	@echo "  workload-identity      Set up WIF for GitHub Actions (05-workload-identity-federation-github.sh)"
+	@echo "  increase-quotas        Request common quota increases (06-increase-service-quotas.sh)"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make all PROJECT_ID=my-proj BILLING_ACCOUNT_ID=01ABCD-23EF56-789GHI"
@@ -66,7 +68,7 @@ help:
 	@echo "  make enable-apis PROJECT_ID=my-proj EXTRA_APIS=container.googleapis.com"
 
 # Full pipeline: all steps in order
-all: provision link-billing enable-apis sa-account workload-identity
+all: provision link-billing enable-apis sa-account workload-identity increase-quotas
 	@echo ""
 	@echo "=== Bootstrap complete for project: $(PROJECT_ID) ==="
 
@@ -95,3 +97,8 @@ sa-account: enable-apis
 workload-identity: sa-account
 	$(call require_project,workload-identity)
 	$(BOOTSTRAP_DIR)05-workload-identity-federation-github.sh "$(PROJECT_ID)" "$(GITHUB_ORG)" "$(GITHUB_REPO)" "$(SERVICE_ACCOUNT_ID)"
+
+# 06 — Request common GCP service quota increases (Compute CPUs, instances, IPs)
+increase-quotas: workload-identity
+	$(call require_project,increase-quotas)
+	$(BOOTSTRAP_DIR)06-increase-service-quotas.sh "$(PROJECT_ID)" $(QUOTA_REGIONS)
