@@ -27,8 +27,9 @@ else
   echo "Project $PROJECT_ID created."
 fi
 
-# Set or update default project labels (idempotent)
+# Set or update default project labels (idempotent).
+# --update-labels is only in the alpha track; stable gcloud projects update does not support it yet.
 if [[ -n "$LABELS" ]]; then
   echo "Setting project labels: $LABELS"
-  gcloud projects update "$PROJECT_ID" --update-labels="$LABELS"
+  gcloud alpha projects update "$PROJECT_ID" --update-labels="$LABELS"
 fi
