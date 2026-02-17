@@ -140,16 +140,19 @@ jobs:
 
       - name: Terraform Init
         if: steps.check.outputs.run == 'true'
+        id: init
         working-directory: terraform/projects/${{ matrix.project }}/${{ matrix.environment }}
         run: terraform init
 
       - name: Terraform Format Check
         if: steps.check.outputs.run == 'true'
+        id: fmt
         working-directory: terraform/projects/${{ matrix.project }}/${{ matrix.environment }}
         run: terraform fmt -check -recursive
 
       - name: Terraform Validate
         if: steps.check.outputs.run == 'true'
+        id: validate
         working-directory: terraform/projects/${{ matrix.project }}/${{ matrix.environment }}
         run: terraform validate
 

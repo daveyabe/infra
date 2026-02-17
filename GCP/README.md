@@ -8,7 +8,7 @@ The bootstrap runs **five steps** in order. Each step is idempotent where possib
 
 | Step | Script | Purpose |
 |------|--------|---------|
-| 1 | `01-provision-project.sh` | Create the GCP project (or no-op if it exists). |
+| 1 | `01-provision-project.sh` | Create the GCP project (or no-op if it exists) and set default labels. |
 | 2 | `02-link-billing.sh` | Link a billing account (required for APIs and paid resources). |
 | 3 | `03-enable-apis.sh` | Enable default + AI APIs (and optional extras). |
 | 4 | `04-SA-account-TF.sh` | Create `terraform-pro` service account and grant IAM roles. |
@@ -43,6 +43,7 @@ List billing accounts: `gcloud billing accounts list`
 |----------|-------------|---------|
 | `PROJECT_NAME` | Display name for the project. | `PROJECT_ID` |
 | `ORGANIZATION_ID` | Organization ID; project is created under this org if set. | (none) |
+| `PROJECT_LABELS` | Project labels (comma-separated `key=value`). | `team=devops,environment=dev` |
 | `GITHUB_ORG` | GitHub organization for Workload Identity Federation. | `N43-Studio` |
 | `GITHUB_REPO` | GitHub repository for WIF. | `infrastructure` |
 | `SERVICE_ACCOUNT_ID` | Service account used by GitHub Actions via WIF. | `terraform-github-actions` |
