@@ -18,6 +18,7 @@ BILLING_ACCOUNT_ID ?=
 # --- Optional (with defaults matching the scripts) ---
 PROJECT_NAME      ?= $(PROJECT_ID)
 ORGANIZATION_ID   ?=
+PROJECT_LABELS    ?= team=devops,environment=dev
 GITHUB_ORG        ?= N43-Studio
 GITHUB_REPO       ?= infrastructure
 SERVICE_ACCOUNT_ID ?= terraform-github-actions
@@ -45,6 +46,7 @@ help:
 	@echo "Optional:"
 	@echo "  PROJECT_NAME           Display name (default: PROJECT_ID)"
 	@echo "  ORGANIZATION_ID        Org ID for project create (e.g. 833531661158)"
+	@echo "  PROJECT_LABELS         Project labels (default: team=devops,environment=dev)"
 	@echo "  GITHUB_ORG             GitHub org for WIF (default: N43-Studio)"
 	@echo "  GITHUB_REPO            GitHub repo for WIF (default: infrastructure)"
 	@echo "  SERVICE_ACCOUNT_ID     WIF service account (default: terraform-github-actions)"
@@ -68,10 +70,10 @@ all: provision link-billing enable-apis sa-account workload-identity
 	@echo ""
 	@echo "=== Bootstrap complete for project: $(PROJECT_ID) ==="
 
-# 01 — Create project (idempotent)
+# 01 — Create project (idempotent) and set default labels
 provision:
 	$(call require_project,provision)
-	$(BOOTSTRAP_DIR)01-provision-project.sh "$(PROJECT_ID)" "$(PROJECT_NAME)" "$(ORGANIZATION_ID)"
+	$(BOOTSTRAP_DIR)01-provision-project.sh "$(PROJECT_ID)" "$(PROJECT_NAME)" "$(ORGANIZATION_ID)" "$(PROJECT_LABELS)"
 
 # 02 — Link billing (required for APIs and paid resources)
 link-billing: provision
