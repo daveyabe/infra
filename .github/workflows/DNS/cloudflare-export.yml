@@ -1,0 +1,23 @@
+name: Cloudflare DNS Export
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  push:
+    branches:
+      - gcp-gcp-metadata
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: export-records
+    steps:
+      - uses: actions/checkout@v4
+      - name: Backup
+        uses: raiyansarker/cloudflare-dns-export@v1.1
+        with:
+          NAME: ${{ github.repository }}
+          ZONE_ID: c3b6ee004bf484a07a391be507a8e63a
+          API_KEY: PzjaXX5niuzOTrpYNqE-auHXBtwOzYpOkMDy5TN7
+          FOLDER: exports
+          PREFIX: n43studios.com
