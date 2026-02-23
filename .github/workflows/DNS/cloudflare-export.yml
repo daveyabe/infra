@@ -10,7 +10,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    name: export-records
+    name: export-records-n43studios
     steps:
       - uses: actions/checkout@v4
       - name: Backup
