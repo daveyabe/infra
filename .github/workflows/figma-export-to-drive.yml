@@ -24,8 +24,6 @@ jobs:
         with:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
           service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
-          # Project ID helps the Drive API identify the caller (avoids 403 "unregistered callers")
-          project_id: ${{ vars.GCP_PROJECT_ID }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -38,9 +36,6 @@ jobs:
 
       - name: Export Figma to Drive
         env:
-          # Ensure ADC is used (avoids 403 "unregistered callers"); project_id identifies the caller to Drive API
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
-          GCP_PROJECT_ID: ${{ steps.auth.outputs.project_id }}
           FIGMA_ACCESS_TOKEN: ${{ secrets.FIGMA_ACCESS_TOKEN }}
           GOOGLE_DRIVE_FOLDER_ID: ${{ vars.GOOGLE_DRIVE_FOLDER_ID }}
           # One of: FIGMA_TEAM_ID (export entire team), FIGMA_FILE_KEYS (comma-separated), or FIGMA_FILE_KEY (single file)
