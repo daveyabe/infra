@@ -89,6 +89,8 @@ async function ensureFolder(drive, parentId, folderName) {
     q: `'${parentId}' in parents and name = '${safeName.replace(/'/g, "''")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
     fields: 'files(id)',
     pageSize: 1,
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
   });
   if (list.data.files?.length) return list.data.files[0].id;
   const create = await drive.files.create({
@@ -97,6 +99,7 @@ async function ensureFolder(drive, parentId, folderName) {
       mimeType: 'application/vnd.google-apps.folder',
       parents: [parentId],
     },
+    supportsAllDrives: true,
   });
   return create.data.id;
 }
@@ -152,6 +155,7 @@ async function exportOneFile(token, fileKey, targetFolderId, format, drive, opts
     await drive.files.create({
       requestBody: { name: fileName, parents: [targetFolderId] },
       media: { mimeType: 'application/pdf', body: Readable.from(Buffer.from(mergedBytes)) },
+      supportsAllDrives: true,
     });
     return downloads.length;
   }
@@ -161,6 +165,7 @@ async function exportOneFile(token, fileKey, targetFolderId, format, drive, opts
     await drive.files.create({
       requestBody: { name: fileName, parents: [targetFolderId] },
       media: { mimeType, body: Readable.from(buffer) },
+      supportsAllDrives: true,
     });
   }
   return downloads.length;

@@ -24,9 +24,9 @@ Export Figma file(s) top-level frames as images (PNG by default) and upload them
   - `FIGMA_ACCESS_TOKEN` — Figma personal access token (secret). For team mode, the token must have access to the team and `projects:read` if using OAuth.
   - **Google Cloud (WIF, recommended):** The workflow uses Workload Identity Federation; no service account key is stored in GitHub. Set these **repository variables**:
     - **`WIF_PROVIDER`** — Full Workload Identity Provider resource name, e.g. `projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/providers/PROVIDER_ID`.
-    - **`WIF_SERVICE_ACCOUNT`** — Service account email that can access Drive, e.g. `figma-export@PROJECT_ID.iam.gserviceaccount.com`. Share the root Drive folder with this email (Editor). The same SA must be granted `roles/iam.workloadIdentityUser` for the GitHub repo principal (see [Setup: Workload Identity Federation](#setup-workload-identity-federation) below).
+    - **`WIF_SERVICE_ACCOUNT`** — Service account email, e.g. `figma-export@PROJECT_ID.iam.gserviceaccount.com`. The root folder **must be inside a Shared Drive** (service accounts have no storage quota in "My Drive"). Add this email as a member of the Shared Drive (e.g. Content manager). The same SA must be granted `roles/iam.workloadIdentityUser` for the GitHub repo principal (see [Setup: Workload Identity Federation](#setup-workload-identity-federation) below).
   - **Alternative (JSON key):** If you prefer a key, set secret **`GOOGLE_DRIVE_CREDENTIALS_JSON`** to the service account key JSON string. The script uses it when present; otherwise it uses Application Default Credentials (from the WIF auth step).
-  - `GOOGLE_DRIVE_FOLDER_ID` — Root folder ID (variable). Use either the ID only (e.g. `1TBzWWrha_veHUwrl74J_F-XhUj4p6KDO`) or the full URL (`https://drive.google.com/drive/folders/...`); the script normalizes URLs to the ID.
+  - `GOOGLE_DRIVE_FOLDER_ID` — Root folder ID (variable). **When using a service account, this folder must be inside a [Shared Drive](https://support.google.com/drive/answer/7212025).** Use either the ID only or the full folder URL; the script normalizes URLs to the ID.
   - One of: `FIGMA_TEAM_ID`, `FIGMA_FILE_KEYS` (comma-separated), or `FIGMA_FILE_KEY`. Optional: `FIGMA_PROJECT_IDS` (comma-separated) to restrict team export to certain projects.
   - **`FIGMA_EXPORT_FORMAT`** — `png` (default), `jpg`, `svg`, or `pdf`.
   - **`FIGMA_COMBINE_PDF_PER_FILE`** — When set to `true` (or `1`) and format is `pdf`, all frames in each file are merged into a single PDF per file (e.g. one deck PDF per Figma Slides file). Otherwise each frame is uploaded as a separate file.
@@ -40,6 +40,17 @@ Export Figma file(s) top-level frames as images (PNG by default) and upload them
 | **Schedule** | Optional; set `schedule` in the workflow (e.g. `0 8 * * 1-5` = 08:00 UTC weekdays). |
 | **Manual run** | Yes (`workflow_dispatch`) |
 | **Output** | PNG files in the specified Google Drive folder |
+
+## Troubleshooting: 403 "Service Accounts do not have storage quota"
+
+When using a **service account** (WIF or JSON key), the root folder must be inside a **Shared Drive** (formerly Team Drive), not in "My Drive". Service accounts have no storage quota in My Drive. Do this:
+
+1. Create or use a **Shared Drive** in Google Drive (Drive for desktop or drive.google.com → Shared drives).
+2. Create a folder inside that Shared Drive to use as the export root (or use the Shared Drive root).
+3. Add the service account email (`WIF_SERVICE_ACCOUNT`) as a member of the Shared Drive with **Content manager** (or at least **Writer**) access.
+4. Set `GOOGLE_DRIVE_FOLDER_ID` to that folder’s ID (from the folder URL).
+
+The script sends `supportsAllDrives: true` so list/create work correctly in Shared Drives.
 
 ## Rate limits and robustness
 
