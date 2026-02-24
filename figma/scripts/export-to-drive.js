@@ -220,10 +220,20 @@ async function main() {
       }
     }
     process.stdout.write(`  ${fileName} (${fileKey}) → `);
-    const count = await exportOneFile(token, fileKey, targetFolderId, format, drive, {
-      combinePdfPerFile,
-      fileNameForDeck: fileName,
-    });
+    let count = 0;
+    try {
+      count = await exportOneFile(token, fileKey, targetFolderId, format, drive, {
+        combinePdfPerFile,
+        fileNameForDeck: fileName,
+      });
+    } catch (err) {
+      const msg = err?.message || String(err);
+      if (msg.includes('File type not supported by this endpoint')) {
+        console.log('skipped (file type not supported by Figma API, e.g. blank template or FigJam).');
+        continue;
+      }
+      throw err;
+    }
     totalFrames += count;
     console.log(`${count} frame(s).`);
   }
