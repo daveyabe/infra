@@ -39,6 +39,18 @@ function sanitizeFileName(name) {
   return name.replace(/[^\w\s.-]/g, '').replace(/\s+/g, '_').trim() || 'frame';
 }
 
+/** Extract Drive folder ID from a URL or return as-is if already an ID. */
+function normalizeDriveFolderId(value) {
+  if (!value || typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!trimmed.includes('drive.google') && !trimmed.includes('/')) return trimmed;
+  const foldersMatch = trimmed.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (foldersMatch) return foldersMatch[1];
+  const idParamMatch = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (idParamMatch) return idParamMatch[1];
+  return trimmed;
+}
+
 /** Collect top-level frame node ids and names (direct children of each page). */
 function collectFrameNodes(document) {
   const acc = [];
@@ -173,7 +185,7 @@ async function exportOneFile(token, fileKey, targetFolderId, format, drive, opts
 
 async function main() {
   const token = env('FIGMA_ACCESS_TOKEN');
-  const folderId = env('GOOGLE_DRIVE_FOLDER_ID');
+  const folderId = normalizeDriveFolderId(env('GOOGLE_DRIVE_FOLDER_ID'));
   const credentialsJson = process.env.GOOGLE_DRIVE_CREDENTIALS_JSON;
   const format = (process.env.FIGMA_EXPORT_FORMAT || 'png').toLowerCase();
   const combinePdfPerFile = /^(1|true|yes)$/i.test(process.env.FIGMA_COMBINE_PDF_PER_FILE || '');
