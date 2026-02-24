@@ -22,9 +22,11 @@ Export Figma file(s) top-level frames as images (PNG by default) and upload them
 - **Google Drive**: For each file, create subfolders as needed (project name, then file name when in team mode; file name only when using `FIGMA_FILE_KEYS`). Upload each frame image into the file’s folder. File names are sanitized; duplicate names in the same folder will overwrite (no versioning by default).
 - **Secrets / variables**:
   - `FIGMA_ACCESS_TOKEN` — Figma personal access token (secret). For team mode, the token must have access to the team and `projects:read` if using OAuth.
-  - **Google Cloud (WIF, recommended):** The workflow uses Workload Identity Federation; no service account key is stored in GitHub. Set these **repository variables**:
+  - **Google Cloud (WIF, recommended):** The workflow uses Workload Identity Federation; no service account key is stored in GitHub.
+    - **Enable the Drive API** in your GCP project (APIs & Services → Enable APIs → Google Drive API). Required to avoid 403 "unregistered callers".
     - **`WIF_PROVIDER`** — Full Workload Identity Provider resource name, e.g. `projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/providers/PROVIDER_ID`.
     - **`WIF_SERVICE_ACCOUNT`** — Service account email that can access Drive, e.g. `figma-export@PROJECT_ID.iam.gserviceaccount.com`. Share the root Drive folder with this email (Editor). The same SA must be granted `roles/iam.workloadIdentityUser` for the GitHub repo principal (see [Setup: Workload Identity Federation](#setup-workload-identity-federation) below).
+    - **`GCP_PROJECT_ID`** (optional but recommended for WIF) — Your Google Cloud project ID. Helps the Drive API identify the caller; if omitted, the auth action may infer it from the service account email.
   - **Alternative (JSON key):** If you prefer a key, set secret **`GOOGLE_DRIVE_CREDENTIALS_JSON`** to the service account key JSON string. The script uses it when present; otherwise it uses Application Default Credentials (from the WIF auth step).
   - `GOOGLE_DRIVE_FOLDER_ID` — Root folder ID (variable; from the folder URL: `drive.google.com/.../folders/<FOLDER_ID>`).
   - One of: `FIGMA_TEAM_ID`, `FIGMA_FILE_KEYS` (comma-separated), or `FIGMA_FILE_KEY`. Optional: `FIGMA_PROJECT_IDS` (comma-separated) to restrict team export to certain projects.
@@ -40,6 +42,14 @@ Export Figma file(s) top-level frames as images (PNG by default) and upload them
 | **Schedule** | Optional; set `schedule` in the workflow (e.g. `0 8 * * 1-5` = 08:00 UTC weekdays). |
 | **Manual run** | Yes (`workflow_dispatch`) |
 | **Output** | PNG files in the specified Google Drive folder |
+
+## Troubleshooting 403 "unregistered callers"
+
+If you see `403 PERMISSION_DENIED` with "Method doesn't allow unregistered callers":
+
+1. **Enable the Google Drive API** in your GCP project: APIs & Services → Library → search "Google Drive API" → Enable.
+2. **Set `GCP_PROJECT_ID`** (repository variable) to your Google Cloud project ID so the Drive API can identify the caller. The workflow passes this to the auth step and to the export script.
+3. Ensure the auth step runs before the export and that **Workload Identity Federation** is correctly set up (correct `WIF_PROVIDER`, `WIF_SERVICE_ACCOUNT`, and IAM binding for the repo).
 
 ## Rate limits and robustness
 

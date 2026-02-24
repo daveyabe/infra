@@ -173,14 +173,17 @@ async function main() {
   const format = (process.env.FIGMA_EXPORT_FORMAT || 'png').toLowerCase();
   const combinePdfPerFile = /^(1|true|yes)$/i.test(process.env.FIGMA_COMBINE_PDF_PER_FILE || '');
 
+  const projectId = process.env.GCP_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT;
+  const authOptions = {
+    scopes: ['https://www.googleapis.com/auth/drive.file'],
+    ...(projectId && { projectId }),
+  };
   const auth = credentialsJson
     ? new google.auth.GoogleAuth({
         credentials: JSON.parse(credentialsJson),
-        scopes: ['https://www.googleapis.com/auth/drive.file'],
+        ...authOptions,
       })
-    : new google.auth.GoogleAuth({
-        scopes: ['https://www.googleapis.com/auth/drive.file'],
-      });
+    : new google.auth.GoogleAuth(authOptions);
   const drive = google.drive({ version: 'v3', auth });
 
   let filesToExport = [];
