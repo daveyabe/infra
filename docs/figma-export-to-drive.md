@@ -41,32 +41,6 @@ Export Figma file(s) top-level frames as images (PNG by default) and upload them
 | **Manual run** | Yes (`workflow_dispatch`) |
 | **Output** | PNG files in the specified Google Drive folder |
 
-## Setup: Workload Identity Federation
-
-The workflow authenticates to Google Cloud using **Workload Identity Federation (WIF)** so you do not need to store a service account JSON key in GitHub.
-
-1. **GCP project**  
-   Use an existing project or create one. Enable **Google Drive API** (APIs & Services → Library).
-
-2. **Workload Identity Pool and Provider**  
-   Create a pool and a GitHub OIDC provider in that project (e.g. using [terraform/modules/workload_identity](terraform/modules/workload_identity) or [GCP/layer0_bootstrap/05-workload-identity-federation-github.sh](GCP/layer0_bootstrap/05-workload-identity-federation-github.sh)). The provider resource name is your **`WIF_PROVIDER`** (e.g. `projects/123456789/locations/global/workloadIdentityPools/github-pool/providers/github-provider`).
-
-3. **Service account for Drive**  
-   Create a service account (e.g. `figma-export`) in the same project. Do **not** create a key. Grant it **`roles/iam.workloadIdentityUser`** with member set to the principal that represents your GitHub repo, for example:
-   - `principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/attribute.repository/ORG/REPO`
-   (Replace ORG/REPO with your GitHub org and repo name; the pool’s attribute condition must allow this repo.)
-
-4. **Share the Drive folder**  
-   In Google Drive, share the root export folder with the service account email (e.g. `figma-export@PROJECT_ID.iam.gserviceaccount.com`) as **Editor**.
-
-5. **GitHub variables**  
-   In the repo: **Settings → Secrets and variables → Actions → Variables**. Add:
-   - **`WIF_PROVIDER`** — full provider resource name from step 2.
-   - **`WIF_SERVICE_ACCOUNT`** — service account email from step 3.
-   - **`GOOGLE_DRIVE_FOLDER_ID`** — Drive folder ID (from the folder URL).
-
-No `GOOGLE_DRIVE_CREDENTIALS_JSON` secret is required when using WIF.
-
 ## Rate limits and robustness
 
 - Figma image export URLs expire quickly; the script downloads them immediately after calling the images endpoint.
