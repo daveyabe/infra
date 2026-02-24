@@ -232,6 +232,10 @@ async function main() {
         console.log('skipped (file type not supported by Figma API, e.g. blank template or FigJam).');
         continue;
       }
+      if (msg.includes('File not found') || msg.includes('404')) {
+        console.log('skipped (file not found or no access).');
+        continue;
+      }
       throw err;
     }
     totalFrames += count;

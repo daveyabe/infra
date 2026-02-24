@@ -47,6 +47,7 @@ Export Figma file(s) top-level frames as images (PNG by default) and upload them
 - Figma API is rate-limited; for a large team the script makes many requests (projects + files + file + images per file). Consider running during off-peak times or adding a short delay between files if you hit limits.
 - If a file has no exportable frames, it is skipped; the run continues with the next file.
 - Files that return "File type not supported by this endpoint" from Figma (e.g. blank templates, FigJam boards) are skipped with a log message; the run continues.
+- Files that return 404 "File not found" (deleted, moved, or no access) are skipped; the run continues.
 - Drive upload or folder-creation failures (e.g. permission or quota) cause the script to exit with an error and the workflow to fail.
 - **Team ID**: You cannot get the team ID from the API. Copy it from the Figma URL when viewing the team in the browser (e.g. `figma.com/files/team/123456789` → team ID is `123456789`).
 
