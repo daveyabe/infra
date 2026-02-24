@@ -1,0 +1,28 @@
+# Copy this file to terraform.tfvars and fill in your values
+# Riley backend service - development
+
+gcp_project_id = "my-gcp-project-id"
+region         = "northamerica-northeast2"
+
+common_labels = {
+  managed_by = "terraform"
+  team       = "platform"
+}
+
+# --- Riley backend image ---
+riley_backend_image_tag = "latest"
+
+# --- Riley backend Cloud Run ---
+riley_backend_port                  = 8080
+riley_backend_min_instances         = 0
+riley_backend_max_instances         = 10
+riley_backend_cpu                   = "1"
+riley_backend_memory                = "512Mi"
+riley_backend_allow_unauthenticated = false
+# riley_backend_service_account_email = null
+
+# Optional: environment variables for the backend container
+# riley_backend_env = {
+#   ENV       = "dev"
+#   LOG_LEVEL = "debug"
+# }

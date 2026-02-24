@@ -1,0 +1,14 @@
+# Copy this file to terraform.tfvars and fill in your values
+
+gcp_project_id = "my-gcp-project-id"
+region         = "northamerica-northeast2"
+
+common_labels = {
+  managed_by = "terraform"
+  team       = "devops"
+}
+
+# GitHub Actions Runner configuration
+github_runner_url    = "https://github.com/N43-Studio/Riley"
+github_runner_token  = "ghp_xxxxxxxxxxxxxxxxxxxx"  # Use a GitHub PAT with repo scope
+github_runner_labels = "self-hosted,linux,x64,gcp,prod"
