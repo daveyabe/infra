@@ -10,6 +10,7 @@ Infrastructure as code and provisioning scripts for GCP: project bootstrapping, 
 │   ├── gcp-projects/             # Per–GCP-project docs and runbooks
 │   └── cloudflare-dns-export.md  # Spec for Cloudflare DNS zone export workflow
 ├── cloudflare/                   # Cloudflare-related assets (exports retained as workflow artifacts)
+├── figma/                        # Figma → Google Drive export (script + deps)
 ├── GCP/                          # GCP provisioning and ad hoc scripts
 │   ├── layer0_bootstrap/         # Full project bootstrap (see GCP/README.md)
 │   ├── Cloud SQL/                # Ad hoc scripts (e.g. SandboxDB, Secret Manager)
@@ -28,6 +29,7 @@ Infrastructure as code and provisioning scripts for GCP: project bootstrapping, 
 |------|----------|-------------|
 | **Project docs** | `docs/gcp-projects/` | Notes and runbooks per GCP project (e.g. setup, quirks, operations). |
 | **Cloudflare DNS export** | [docs/cloudflare-dns-export.md](docs/cloudflare-dns-export.md) | Spec for the GitHub Action that exports Cloudflare DNS zones to BIND files and retains them as workflow artifacts. |
+| **Figma export to Drive** | [docs/figma-export-to-drive.md](docs/figma-export-to-drive.md) | GitHub Action to export Figma file(s) or entire team to Google Drive (PNG frames). |
 
 ## Cloudflare
 

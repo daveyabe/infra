@@ -1,0 +1,13 @@
+{
+  "name": "figma-export-to-drive",
+  "description": "Script and deps for Figma → Google Drive export (run by GitHub Action)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "export": "node scripts/export-to-drive.js"
+  },
+  "dependencies": {
+    "googleapis": "^144.0.0",
+    "pdf-lib": "^1.17.1"
+  }
+}

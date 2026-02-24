@@ -1,0 +1,84 @@
+# Figma export to Google Drive (GitHub Action)
+
+## Purpose
+
+Export Figma file(s) top-level frames as images (PNG by default) and upload them to a Google Drive folder. Supports **single file**, **multiple file keys**, or **entire team** (discover all files via team → projects → files). Runs on a schedule and/or on demand via `workflow_dispatch`.
+
+## Modes
+
+- **Team (entire team’s files)**  
+  Set `FIGMA_TEAM_ID` (team ID from the Figma URL when viewing the team). The script lists all projects in the team, then all files in each project, and exports every file. Drive structure: `root/ProjectName/FileName/frame1.png`. Optionally set `FIGMA_PROJECT_IDS` (comma-separated) to limit to specific projects.
+- **Multiple files**  
+  Set `FIGMA_FILE_KEYS` to a comma-separated list of file keys. Drive structure: `root/FileName/frame1.png` (one subfolder per file).
+- **Single file**  
+  Set `FIGMA_FILE_KEY`. All frames go directly into the root Drive folder.
+
+## Behaviour
+
+- **Trigger**: Optional `schedule` (cron) and/or `workflow_dispatch` for on-demand export.
+- **Figma API**:
+  - Team mode: `GET /v1/teams/:team_id/projects`, then `GET /v1/projects/:project_id/files` per project (requires `projects:read`).
+  - Per file: `GET /v1/files/:key`, collect root-level frame node IDs, `GET /v1/images/:key?ids=...&format=png`, then download each image URL.
+- **Google Drive**: For each file, create subfolders as needed (project name, then file name when in team mode; file name only when using `FIGMA_FILE_KEYS`). Upload each frame image into the file’s folder. File names are sanitized; duplicate names in the same folder will overwrite (no versioning by default).
+- **Secrets / variables**:
+  - `FIGMA_ACCESS_TOKEN` — Figma personal access token (secret). For team mode, the token must have access to the team and `projects:read` if using OAuth.
+  - **Google Cloud (WIF, recommended):** The workflow uses Workload Identity Federation; no service account key is stored in GitHub. Set these **repository variables**:
+    - **`WIF_PROVIDER`** — Full Workload Identity Provider resource name, e.g. `projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/providers/PROVIDER_ID`.
+    - **`WIF_SERVICE_ACCOUNT`** — Service account email that can access Drive, e.g. `figma-export@PROJECT_ID.iam.gserviceaccount.com`. Share the root Drive folder with this email (Editor). The same SA must be granted `roles/iam.workloadIdentityUser` for the GitHub repo principal (see [Setup: Workload Identity Federation](#setup-workload-identity-federation) below).
+  - **Alternative (JSON key):** If you prefer a key, set secret **`GOOGLE_DRIVE_CREDENTIALS_JSON`** to the service account key JSON string. The script uses it when present; otherwise it uses Application Default Credentials (from the WIF auth step).
+  - `GOOGLE_DRIVE_FOLDER_ID` — Root folder ID (variable; from the folder URL: `drive.google.com/.../folders/<FOLDER_ID>`).
+  - One of: `FIGMA_TEAM_ID`, `FIGMA_FILE_KEYS` (comma-separated), or `FIGMA_FILE_KEY`. Optional: `FIGMA_PROJECT_IDS` (comma-separated) to restrict team export to certain projects.
+  - **`FIGMA_EXPORT_FORMAT`** — `png` (default), `jpg`, `svg`, or `pdf`.
+  - **`FIGMA_COMBINE_PDF_PER_FILE`** — When set to `true` (or `1`) and format is `pdf`, all frames in each file are merged into a single PDF per file (e.g. one deck PDF per Figma Slides file). Otherwise each frame is uploaded as a separate file.
+
+## Workflow summary
+
+| Item | Value |
+|------|--------|
+| **Workflow file** | `.github/workflows/figma-export-to-drive.yml` |
+| **Export script** | `figma/scripts/export-to-drive.js` (Node.js; run with `node figma/scripts/export-to-drive.js`) |
+| **Schedule** | Optional; set `schedule` in the workflow (e.g. `0 8 * * 1-5` = 08:00 UTC weekdays). |
+| **Manual run** | Yes (`workflow_dispatch`) |
+| **Output** | PNG files in the specified Google Drive folder |
+
+## Setup: Workload Identity Federation
+
+The workflow authenticates to Google Cloud using **Workload Identity Federation (WIF)** so you do not need to store a service account JSON key in GitHub.
+
+1. **GCP project**  
+   Use an existing project or create one. Enable **Google Drive API** (APIs & Services → Library).
+
+2. **Workload Identity Pool and Provider**  
+   Create a pool and a GitHub OIDC provider in that project (e.g. using [terraform/modules/workload_identity](terraform/modules/workload_identity) or [GCP/layer0_bootstrap/05-workload-identity-federation-github.sh](GCP/layer0_bootstrap/05-workload-identity-federation-github.sh)). The provider resource name is your **`WIF_PROVIDER`** (e.g. `projects/123456789/locations/global/workloadIdentityPools/github-pool/providers/github-provider`).
+
+3. **Service account for Drive**  
+   Create a service account (e.g. `figma-export`) in the same project. Do **not** create a key. Grant it **`roles/iam.workloadIdentityUser`** with member set to the principal that represents your GitHub repo, for example:
+   - `principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/attribute.repository/ORG/REPO`
+   (Replace ORG/REPO with your GitHub org and repo name; the pool’s attribute condition must allow this repo.)
+
+4. **Share the Drive folder**  
+   In Google Drive, share the root export folder with the service account email (e.g. `figma-export@PROJECT_ID.iam.gserviceaccount.com`) as **Editor**.
+
+5. **GitHub variables**  
+   In the repo: **Settings → Secrets and variables → Actions → Variables**. Add:
+   - **`WIF_PROVIDER`** — full provider resource name from step 2.
+   - **`WIF_SERVICE_ACCOUNT`** — service account email from step 3.
+   - **`GOOGLE_DRIVE_FOLDER_ID`** — Drive folder ID (from the folder URL).
+
+No `GOOGLE_DRIVE_CREDENTIALS_JSON` secret is required when using WIF.
+
+## Rate limits and robustness
+
+- Figma image export URLs expire quickly; the script downloads them immediately after calling the images endpoint.
+- Figma API is rate-limited; for a large team the script makes many requests (projects + files + file + images per file). Consider running during off-peak times or adding a short delay between files if you hit limits.
+- If a file has no exportable frames, it is skipped; the run continues with the next file.
+- Drive upload or folder-creation failures (e.g. permission or quota) cause the script to exit with an error and the workflow to fail.
+- **Team ID**: You cannot get the team ID from the API. Copy it from the Figma URL when viewing the team in the browser (e.g. `figma.com/files/team/123456789` → team ID is `123456789`).
+
+## Combined PDF per deck
+
+When exporting slides or multi-frame files as PDF, set **`FIGMA_EXPORT_FORMAT=pdf`** and **`FIGMA_COMBINE_PDF_PER_FILE=true`** (or `1`). The script will request one PDF per frame from Figma, merge them in frame order with `pdf-lib`, and upload a single combined PDF per file (e.g. `My Deck.pdf`). Frame order follows the order of frames in the Figma file.
+
+## Optional extensions
+
+- **Versioning**: Extend the script to append a timestamp or run ID to file names (or create dated subfolders) instead of overwriting.

@@ -1,0 +1,49 @@
+# Export a Figma file's frames to Google Drive.
+# See docs/figma-export-to-drive.md for setup. Uses Workload Identity Federation (WIF); no JSON key required.
+name: Figma export to Drive
+
+on:
+  schedule:
+    # 08:00 UTC weekdays (customize or remove if you only want manual runs)
+    - cron: '0 8 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (WIF)
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+        working-directory: figma
+
+      - name: Export Figma to Drive
+        env:
+          FIGMA_ACCESS_TOKEN: ${{ secrets.FIGMA_ACCESS_TOKEN }}
+          GOOGLE_DRIVE_FOLDER_ID: ${{ vars.GOOGLE_DRIVE_FOLDER_ID }}
+          # One of: FIGMA_TEAM_ID (export entire team), FIGMA_FILE_KEYS (comma-separated), or FIGMA_FILE_KEY (single file)
+          FIGMA_TEAM_ID: ${{ vars.FIGMA_TEAM_ID }}
+          FIGMA_FILE_KEYS: ${{ vars.FIGMA_FILE_KEYS }}
+          FIGMA_FILE_KEY: ${{ vars.FIGMA_FILE_KEY }}
+          FIGMA_PROJECT_IDS: ${{ vars.FIGMA_PROJECT_IDS }}
+          FIGMA_EXPORT_FORMAT: ${{ vars.FIGMA_EXPORT_FORMAT }}
+          FIGMA_COMBINE_PDF_PER_FILE: ${{ vars.FIGMA_COMBINE_PDF_PER_FILE }}
+        run: npm run export
+        working-directory: figma
