@@ -7,7 +7,9 @@ Infrastructure as code and provisioning scripts for GCP: project bootstrapping, 
 ```
 .
 ├── docs/                         # Documentation and project notes
-│   └── gcp-projects/             # Per–GCP-project docs and runbooks
+│   ├── gcp-projects/             # Per–GCP-project docs and runbooks
+│   └── cloudflare-dns-export.md  # Spec for Cloudflare DNS zone export workflow
+├── cloudflare/                   # Cloudflare-related assets (exports retained as workflow artifacts)
 ├── GCP/                          # GCP provisioning and ad hoc scripts
 │   ├── layer0_bootstrap/         # Full project bootstrap (see GCP/README.md)
 │   ├── Cloud SQL/                # Ad hoc scripts (e.g. SandboxDB, Secret Manager)
@@ -17,7 +19,7 @@ Infrastructure as code and provisioning scripts for GCP: project bootstrapping, 
 │   ├── modules/                  # Reusable modules (VPC, GCE, GCS, IAM, firewall, MIG, etc.)
 │   ├── projects/                 # Project-specific environments (e.g. riley/dev)
 │   └── projects-test/            # Test project configs
-└── .github/workflows/            # CI (Terraform plan/apply, manual runs)
+└── .github/workflows/            # CI (Terraform plan/apply, Cloudflare DNS export, manual runs)
 ```
 
 ## Docs
@@ -25,6 +27,11 @@ Infrastructure as code and provisioning scripts for GCP: project bootstrapping, 
 | Area | Location | Description |
 |------|----------|-------------|
 | **Project docs** | `docs/gcp-projects/` | Notes and runbooks per GCP project (e.g. setup, quirks, operations). |
+| **Cloudflare DNS export** | [docs/cloudflare-dns-export.md](docs/cloudflare-dns-export.md) | Spec for the GitHub Action that exports Cloudflare DNS zones to BIND files and retains them as workflow artifacts. |
+
+## Cloudflare
+
+A GitHub Action exports all DNS zones from Cloudflare to BIND-format files and retains them as **workflow artifacts** (download from the run’s Artifacts section). Runs on a schedule and via **Actions → Cloudflare DNS export → Run workflow**. Requires repo secret `CLOUDFLARE_API_TOKEN` (Zone DNS Read). See **[docs/cloudflare-dns-export.md](docs/cloudflare-dns-export.md)** for the full spec.
 
 ## GCP — bootstrapping and scripts
 
