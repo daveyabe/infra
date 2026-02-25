@@ -3,9 +3,9 @@
 name: Figma export to Drive
 
 on:
-  schedule:
+  #schedule:
     # 08:00 UTC weekdays (customize or remove if you only want manual runs)
-    - cron: '0 8 * * 1-5'
+    #- cron: '0 8 * * 1-5'
   workflow_dispatch:
 
 jobs:
