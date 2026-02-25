@@ -82,8 +82,8 @@ function collectFrameNodes(document) {
   return acc;
 }
 
-/** List all files in a team: { fileKey, fileName, projectName }[]. Optionally filter by editor_type (e.g. 'slides'). */
-async function listTeamFiles(token, teamId, { projectIdsFilter = [], editorTypes = [] } = {}) {
+/** List all files in a team: { fileKey, fileName, projectName }[]. */
+async function listTeamFiles(token, teamId, { projectIdsFilter = [] } = {}) {
   const projectsRes = await figmaFetch(`${FIGMA_BASE}/teams/${teamId}/projects`, {
     headers: { 'X-Figma-Token': token },
   });
@@ -102,7 +102,6 @@ async function listTeamFiles(token, teamId, { projectIdsFilter = [], editorTypes
     for (const f of projectFiles) {
       const fileKey = f.key ?? f.file_key ?? f.id;
       if (!fileKey) continue;
-      if (editorTypes.length && !editorTypes.includes(f.editor_type)) continue;
       files.push({
         fileKey,
         fileName: f.name || fileKey,
@@ -230,8 +229,8 @@ async function main() {
 
   if (teamId) {
     console.log('Team mode: discovering files from team', teamId);
-    filesToExport = await listTeamFiles(token, teamId, { projectIdsFilter, editorTypes });
-    console.log(`Found ${filesToExport.length} file(s) across projects${editorTypes.length ? ` (filtered to: ${editorTypes.join(', ')})` : ''}.`);
+    filesToExport = await listTeamFiles(token, teamId, { projectIdsFilter });
+    console.log(`Found ${filesToExport.length} file(s) across projects.`);
   } else if (fileKeys.length) {
     filesToExport = fileKeys.map((fileKey) => ({ fileKey, fileName: fileKey, projectName: '' }));
     console.log(`File list mode: ${filesToExport.length} file(s).`);
