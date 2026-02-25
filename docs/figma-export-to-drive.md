@@ -30,6 +30,7 @@ Export Figma file(s) top-level frames as images (PNG by default) and upload them
   - One of: `FIGMA_TEAM_ID`, `FIGMA_FILE_KEYS` (comma-separated), or `FIGMA_FILE_KEY`. Optional: `FIGMA_PROJECT_IDS` (comma-separated) to restrict team export to certain projects.
   - **`FIGMA_EXPORT_FORMAT`** — `png` (default), `jpg`, `svg`, or `pdf`.
   - **`FIGMA_COMBINE_PDF_PER_FILE`** — When set to `true` (or `1`) and format is `pdf`, all frames in each file are merged into a single PDF per file (e.g. one deck PDF per Figma Slides file). Otherwise each frame is uploaded as a separate file.
+  - **`FIGMA_EDITOR_TYPES`** — Comma-separated list of Figma editor types to include: `figma`, `figjam`, `slides`. When set, only files matching one of the listed types are exported; others are skipped. Omit to export all types. Example: `slides` to export only Figma Slides files.
 
 ## Workflow summary
 

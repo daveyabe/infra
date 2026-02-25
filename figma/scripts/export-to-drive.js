@@ -17,6 +17,7 @@
  *   FIGMA_EXPORT_FORMAT      - png | jpg | svg | pdf (default: png)
  *   FIGMA_COMBINE_PDF_PER_FILE - when "true" or "1" and format is pdf, merge all frames into one PDF per file (e.g. one deck PDF)
  *   FIGMA_PROJECT_IDS       - Comma-separated project IDs (only with FIGMA_TEAM_ID) to limit to certain projects
+ *   FIGMA_EDITOR_TYPES      - Comma-separated editor types to include (figma, figjam, slides). Default: all types.
  */
 
 import { Readable } from 'stream';
@@ -81,8 +82,8 @@ function collectFrameNodes(document) {
   return acc;
 }
 
-/** List all files in a team: { fileKey, fileName, projectName }[]. */
-async function listTeamFiles(token, teamId, projectIdsFilter = []) {
+/** List all files in a team: { fileKey, fileName, projectName }[]. Optionally filter by editor_type (e.g. 'slides'). */
+async function listTeamFiles(token, teamId, { projectIdsFilter = [], editorTypes = [] } = {}) {
   const projectsRes = await figmaFetch(`${FIGMA_BASE}/teams/${teamId}/projects`, {
     headers: { 'X-Figma-Token': token },
   });
@@ -101,6 +102,7 @@ async function listTeamFiles(token, teamId, projectIdsFilter = []) {
     for (const f of projectFiles) {
       const fileKey = f.key ?? f.file_key ?? f.id;
       if (!fileKey) continue;
+      if (editorTypes.length && !editorTypes.includes(f.editor_type)) continue;
       files.push({
         fileKey,
         fileName: f.name || fileKey,
@@ -133,9 +135,9 @@ async function ensureFolder(drive, parentId, folderName) {
   return create.data.id;
 }
 
-/** Export one file's frames and upload to targetFolderId. If combinePdfPerFile and format is pdf, upload one merged PDF. */
-async function exportOneFile(token, fileKey, targetFolderId, format, drive, opts = {}) {
-  const { combinePdfPerFile = false, fileNameForDeck = '' } = opts;
+/** Export one file's frames and upload. resolveTargetFolder is called lazily (only when there's content to upload). Returns -1 if skipped due to editor type filter. */
+async function exportOneFile(token, fileKey, resolveTargetFolder, format, drive, opts = {}) {
+  const { combinePdfPerFile = false, fileNameForDeck = '', editorTypes = [] } = opts;
   const fileRes = await figmaFetch(`${FIGMA_BASE}/files/${fileKey}`, {
     headers: { 'X-Figma-Token': token },
   });
@@ -144,6 +146,7 @@ async function exportOneFile(token, fileKey, targetFolderId, format, drive, opts
     throw new Error(`Figma file request failed: ${fileRes.status} ${t}`);
   }
   const fileData = await fileRes.json();
+  if (editorTypes.length && !editorTypes.includes(fileData.editorType)) return -1;
   const document = fileData.document;
   if (!document) throw new Error('Figma file has no document');
   const frames = collectFrameNodes(document);
@@ -157,7 +160,6 @@ async function exportOneFile(token, fileKey, targetFolderId, format, drive, opts
   const imgData = await imgRes.json();
   if (imgData.err) throw new Error(`Figma images error: ${imgData.err}`);
   const images = imgData.images || {};
-  // Preserve frame order when downloading (important for combined PDF)
   const downloads = [];
   for (const frame of frames) {
     const url = images[frame.id];
@@ -168,6 +170,8 @@ async function exportOneFile(token, fileKey, targetFolderId, format, drive, opts
     downloads.push({ name: frame.name, buffer });
   }
   if (downloads.length === 0) return 0;
+
+  const targetFolderId = await resolveTargetFolder();
   const ext = format === 'svg' ? 'svg' : format === 'pdf' ? 'pdf' : format === 'jpg' ? 'jpg' : 'png';
   const mimeType = ext === 'pdf' ? 'application/pdf' : ext === 'svg' ? 'image/svg+xml' : `image/${ext}`;
 
@@ -206,6 +210,7 @@ async function main() {
   const credentialsJson = process.env.GOOGLE_DRIVE_CREDENTIALS_JSON;
   const format = (process.env.FIGMA_EXPORT_FORMAT || 'png').toLowerCase();
   const combinePdfPerFile = /^(1|true|yes)$/i.test(process.env.FIGMA_COMBINE_PDF_PER_FILE || '');
+  const editorTypes = envOptional('FIGMA_EDITOR_TYPES').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 
   const auth = credentialsJson
     ? new google.auth.GoogleAuth({
@@ -225,8 +230,8 @@ async function main() {
 
   if (teamId) {
     console.log('Team mode: discovering files from team', teamId);
-    filesToExport = await listTeamFiles(token, teamId, projectIdsFilter.length ? projectIdsFilter : undefined);
-    console.log(`Found ${filesToExport.length} file(s) across projects.`);
+    filesToExport = await listTeamFiles(token, teamId, { projectIdsFilter, editorTypes });
+    console.log(`Found ${filesToExport.length} file(s) across projects${editorTypes.length ? ` (filtered to: ${editorTypes.join(', ')})` : ''}.`);
   } else if (fileKeys.length) {
     filesToExport = fileKeys.map((fileKey) => ({ fileKey, fileName: fileKey, projectName: '' }));
     console.log(`File list mode: ${filesToExport.length} file(s).`);
@@ -244,21 +249,21 @@ async function main() {
 
   let totalFrames = 0;
   for (const { fileKey, fileName, projectName } of filesToExport) {
-    let targetFolderId = folderId;
-    if (filesToExport.length > 1) {
+    const resolveTargetFolder = async () => {
+      if (filesToExport.length <= 1) return folderId;
       if (projectName) {
         const projectFolderId = await ensureFolder(drive, folderId, projectName);
-        targetFolderId = await ensureFolder(drive, projectFolderId, fileName);
-      } else {
-        targetFolderId = await ensureFolder(drive, folderId, fileName);
+        return ensureFolder(drive, projectFolderId, fileName);
       }
-    }
+      return ensureFolder(drive, folderId, fileName);
+    };
     process.stdout.write(`  ${fileName} (${fileKey}) → `);
     let count = 0;
     try {
-      count = await exportOneFile(token, fileKey, targetFolderId, format, drive, {
+      count = await exportOneFile(token, fileKey, resolveTargetFolder, format, drive, {
         combinePdfPerFile,
         fileNameForDeck: fileName,
+        editorTypes,
       });
     } catch (err) {
       const msg = err?.message || String(err);
@@ -275,6 +280,10 @@ async function main() {
         continue;
       }
       throw err;
+    }
+    if (count === -1) {
+      console.log(`skipped (editor type not in [${editorTypes.join(', ')}]).`);
+      continue;
     }
     totalFrames += count;
     console.log(`${count} frame(s).`);

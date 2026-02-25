@@ -45,5 +45,6 @@ jobs:
           FIGMA_PROJECT_IDS: ${{ vars.FIGMA_PROJECT_IDS }}
           FIGMA_EXPORT_FORMAT: ${{ vars.FIGMA_EXPORT_FORMAT }}
           FIGMA_COMBINE_PDF_PER_FILE: ${{ vars.FIGMA_COMBINE_PDF_PER_FILE }}
+          FIGMA_EDITOR_TYPES: ${{ vars.FIGMA_EDITOR_TYPES }}
         run: npm run export
         working-directory: figma
