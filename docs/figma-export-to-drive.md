@@ -21,7 +21,7 @@ Export Figma file(s) top-level frames as images (PNG by default) and upload them
   - Per file: `GET /v1/files/:key`, collect root-level frame node IDs, `GET /v1/images/:key?ids=...&format=png`, then download each image URL.
 - **Google Drive**: For each file, create subfolders as needed (project name, then file name when in team mode; file name only when using `FIGMA_FILE_KEYS`). Upload each frame image into the file’s folder. File names are sanitized; duplicate names in the same folder will overwrite (no versioning by default).
 - **Secrets / variables**:
-  - `FIGMA_ACCESS_TOKEN` — Figma personal access token (secret). For team mode, the token must have access to the team and `projects:read` if using OAuth.
+  - `FIGMA_ACCESS_TOKEN` — Figma personal access token (secret). For team mode, the token must have access to the team and `projects:read` if using OAuth. The script also uses `GET /v1/files/:key/meta` (requires `file_metadata:read` scope) to pre-check file types before making heavier API calls.
   - **Google Cloud (WIF, recommended):** The workflow uses Workload Identity Federation; no service account key is stored in GitHub. Set these **repository variables**:
     - **`WIF_PROVIDER`** — Full Workload Identity Provider resource name, e.g. `projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/providers/PROVIDER_ID`.
     - **`WIF_SERVICE_ACCOUNT`** — Service account email, e.g. `figma-export@PROJECT_ID.iam.gserviceaccount.com`. The root folder **must be inside a Shared Drive** (service accounts have no storage quota in "My Drive"). Add this email as a member of the Shared Drive (e.g. Content manager). The same SA must be granted `roles/iam.workloadIdentityUser` for the GitHub repo principal (see [Setup: Workload Identity Federation](#setup-workload-identity-federation) below).
@@ -30,7 +30,7 @@ Export Figma file(s) top-level frames as images (PNG by default) and upload them
   - One of: `FIGMA_TEAM_ID`, `FIGMA_FILE_KEYS` (comma-separated), or `FIGMA_FILE_KEY`. Optional: `FIGMA_PROJECT_IDS` (comma-separated) to restrict team export to certain projects.
   - **`FIGMA_EXPORT_FORMAT`** — `png` (default), `jpg`, `svg`, or `pdf`.
   - **`FIGMA_COMBINE_PDF_PER_FILE`** — When set to `true` (or `1`) and format is `pdf`, all frames in each file are merged into a single PDF per file (e.g. one deck PDF per Figma Slides file). Otherwise each frame is uploaded as a separate file.
-  - **`FIGMA_EDITOR_TYPES`** — Comma-separated list of Figma editor types to include: `figma`, `figjam`, `slides`. When set, only files matching one of the listed types are exported; others are skipped. Omit to export all types. Example: `slides` to export only Figma Slides files.
+  - **`FIGMA_EDITOR_TYPES`** — Comma-separated list of Figma editor types to include: `figma`, `figjam`, `slides`. When set, only files matching one of the listed types are exported; others are skipped. Omit to export all types. **Note:** The Figma REST API does not currently support Slides files (`GET /v1/files/:key` returns "File type not supported"). The script detects Slides files via the lightweight metadata endpoint and skips them with a clear message. Presentation decks created as regular Figma design files (editor type `figma`) export fine — use `FIGMA_EDITOR_TYPES=figma` to target those.
 
 ## Workflow summary
 
@@ -58,6 +58,7 @@ The script sends `supportsAllDrives: true` so list/create work correctly in Shar
 - Figma image export URLs expire quickly; the script downloads them immediately after calling the images endpoint.
 - Figma API is rate-limited; for a large team the script makes many requests (projects + files + file + images per file). Consider running during off-peak times or adding a short delay between files if you hit limits.
 - If a file has no exportable frames, it is skipped; the run continues with the next file.
+- **Figma Slides files** are detected via the metadata endpoint and skipped with a clear message — the Figma REST API does not yet support reading their document structure. Export these manually from Figma (File → Export to PDF/PPTX).
 - Files that return "File type not supported by this endpoint" from Figma (e.g. blank templates, FigJam boards) are skipped with a log message; the run continues.
 - Files that return 404 "File not found" (deleted, moved, or no access) are skipped; the run continues.
 - Drive upload or folder-creation failures (e.g. permission or quota) cause the script to exit with an error and the workflow to fail.

@@ -18,6 +18,10 @@
  *   FIGMA_COMBINE_PDF_PER_FILE - when "true" or "1" and format is pdf, merge all frames into one PDF per file (e.g. one deck PDF)
  *   FIGMA_PROJECT_IDS       - Comma-separated project IDs (only with FIGMA_TEAM_ID) to limit to certain projects
  *   FIGMA_EDITOR_TYPES      - Comma-separated editor types to include (figma, figjam, slides). Default: all types.
+ *
+ * Note: The Figma REST API does not currently support Slides files (GET /v1/files/:key returns
+ * "File type not supported"). Slides files are detected via the metadata endpoint and skipped
+ * with a clear message. Regular Figma design files containing presentation frames export fine.
  */
 
 import { Readable } from 'stream';
@@ -69,14 +73,25 @@ function normalizeDriveFolderId(value) {
   return trimmed;
 }
 
-/** Collect top-level frame node ids and names (direct children of each page). */
+/** Collect top-level frame/slide node ids and names (direct children of each page). */
 function collectFrameNodes(document) {
   const acc = [];
   const pages = document.children || [];
   for (const page of pages) {
-    const nodes = page.children || [];
-    for (const node of nodes) {
-      if (node.type === 'FRAME') acc.push({ id: node.id, name: node.name });
+    for (const node of page.children || []) {
+      if (node.type === 'FRAME' || node.type === 'SLIDE') {
+        acc.push({ id: node.id, name: node.name });
+      }
+      if (node.type === 'SLIDE_ROW' || node.type === 'SLIDE_GRID') {
+        for (const child of node.children || []) {
+          if (child.type === 'SLIDE') acc.push({ id: child.id, name: child.name });
+          if (child.type === 'SLIDE_ROW') {
+            for (const slide of child.children || []) {
+              if (slide.type === 'SLIDE') acc.push({ id: slide.id, name: slide.name });
+            }
+          }
+        }
+      }
     }
   }
   return acc;
@@ -134,9 +149,36 @@ async function ensureFolder(drive, parentId, folderName) {
   return create.data.id;
 }
 
-/** Export one file's frames and upload. resolveTargetFolder is called lazily (only when there's content to upload). Returns -1 if skipped due to editor type filter. */
+/**
+ * Lightweight metadata check via GET /v1/files/:key/meta (Tier 3).
+ * Returns { editorType } on success, or null if the endpoint isn't available for this file.
+ */
+async function fetchFileMeta(token, fileKey) {
+  const res = await figmaFetch(`${FIGMA_BASE}/files/${fileKey}/meta`, {
+    headers: { 'X-Figma-Token': token },
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.file || null;
+}
+
+const SLIDES_REST_API_UNSUPPORTED_MSG =
+  'skipped (Figma Slides files are not yet supported by the REST API — export manually from Figma as PDF/PPTX).';
+
+/** Export one file's frames and upload. resolveTargetFolder is called lazily (only when there's content to upload). Returns { count, skipReason? }. */
 async function exportOneFile(token, fileKey, resolveTargetFolder, format, drive, opts = {}) {
   const { combinePdfPerFile = false, fileNameForDeck = '', editorTypes = [] } = opts;
+
+  const meta = await fetchFileMeta(token, fileKey);
+  if (meta) {
+    if (meta.editorType === 'slides') {
+      return { count: 0, skipReason: SLIDES_REST_API_UNSUPPORTED_MSG };
+    }
+    if (editorTypes.length && !editorTypes.includes(meta.editorType)) {
+      return { count: 0, skipReason: `skipped (editor type "${meta.editorType}" not in [${editorTypes.join(', ')}]).` };
+    }
+  }
+
   const fileRes = await figmaFetch(`${FIGMA_BASE}/files/${fileKey}`, {
     headers: { 'X-Figma-Token': token },
   });
@@ -145,11 +187,13 @@ async function exportOneFile(token, fileKey, resolveTargetFolder, format, drive,
     throw new Error(`Figma file request failed: ${fileRes.status} ${t}`);
   }
   const fileData = await fileRes.json();
-  if (editorTypes.length && !editorTypes.includes(fileData.editorType)) return -1;
+  if (editorTypes.length && !editorTypes.includes(fileData.editorType)) {
+    return { count: 0, skipReason: `skipped (editor type "${fileData.editorType}" not in [${editorTypes.join(', ')}]).` };
+  }
   const document = fileData.document;
   if (!document) throw new Error('Figma file has no document');
   const frames = collectFrameNodes(document);
-  if (frames.length === 0) return 0;
+  if (frames.length === 0) return { count: 0 };
   const ids = frames.map((f) => f.id).join(',');
   const imgRes = await figmaFetch(
     `${FIGMA_BASE}/images/${fileKey}?ids=${encodeURIComponent(ids)}&format=${format}`,
@@ -168,7 +212,7 @@ async function exportOneFile(token, fileKey, resolveTargetFolder, format, drive,
     const buffer = Buffer.from(await res.arrayBuffer());
     downloads.push({ name: frame.name, buffer });
   }
-  if (downloads.length === 0) return 0;
+  if (downloads.length === 0) return { count: 0 };
 
   const targetFolderId = await resolveTargetFolder();
   const ext = format === 'svg' ? 'svg' : format === 'pdf' ? 'pdf' : format === 'jpg' ? 'jpg' : 'png';
@@ -189,7 +233,7 @@ async function exportOneFile(token, fileKey, resolveTargetFolder, format, drive,
       media: { mimeType: 'application/pdf', body: Readable.from(Buffer.from(mergedBytes)) },
       supportsAllDrives: true,
     });
-    return downloads.length;
+    return { count: downloads.length };
   }
 
   for (const { name, buffer } of downloads) {
@@ -200,7 +244,7 @@ async function exportOneFile(token, fileKey, resolveTargetFolder, format, drive,
       supportsAllDrives: true,
     });
   }
-  return downloads.length;
+  return { count: downloads.length };
 }
 
 async function main() {
@@ -257,9 +301,9 @@ async function main() {
       return ensureFolder(drive, folderId, fileName);
     };
     process.stdout.write(`  ${fileName} (${fileKey}) → `);
-    let count = 0;
+    let result;
     try {
-      count = await exportOneFile(token, fileKey, resolveTargetFolder, format, drive, {
+      result = await exportOneFile(token, fileKey, resolveTargetFolder, format, drive, {
         combinePdfPerFile,
         fileNameForDeck: fileName,
         editorTypes,
@@ -267,7 +311,7 @@ async function main() {
     } catch (err) {
       const msg = err?.message || String(err);
       if (msg.includes('File type not supported by this endpoint')) {
-        console.log('skipped (file type not supported by Figma API, e.g. blank template or FigJam).');
+        console.log('skipped (file type not supported by Figma REST API, e.g. blank template or FigJam).');
         continue;
       }
       if (msg.includes('File not found') || msg.includes('404')) {
@@ -280,12 +324,12 @@ async function main() {
       }
       throw err;
     }
-    if (count === -1) {
-      console.log(`skipped (editor type not in [${editorTypes.join(', ')}]).`);
+    if (result.skipReason) {
+      console.log(result.skipReason);
       continue;
     }
-    totalFrames += count;
-    console.log(`${count} frame(s).`);
+    totalFrames += result.count;
+    console.log(`${result.count} frame(s).`);
     await sleep(DELAY_BETWEEN_FILES_MS);
   }
   console.log('Done. Total frames uploaded:', totalFrames);
