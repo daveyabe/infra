@@ -24,6 +24,23 @@ import { PDFDocument } from 'pdf-lib';
 import { google } from 'googleapis';
 
 const FIGMA_BASE = 'https://api.figma.com/v1';
+const DELAY_BETWEEN_FILES_MS = 1500;
+const MAX_RETRIES = 4;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** fetch() wrapper with automatic retry + backoff on 429 rate-limit responses. */
+async function figmaFetch(url, opts = {}) {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const res = await fetch(url, opts);
+    if (res.status !== 429) return res;
+    const retryAfter = Number(res.headers.get('retry-after')) || 0;
+    const waitMs = retryAfter > 0 ? retryAfter * 1000 : 2000 * 2 ** attempt;
+    console.log(`  [rate-limited, retrying in ${(waitMs / 1000).toFixed(1)}s]`);
+    await sleep(waitMs);
+  }
+  return fetch(url, opts);
+}
 
 function env(name) {
   const v = process.env[name];
@@ -66,7 +83,7 @@ function collectFrameNodes(document) {
 
 /** List all files in a team: { fileKey, fileName, projectName }[]. */
 async function listTeamFiles(token, teamId, projectIdsFilter = []) {
-  const projectsRes = await fetch(`${FIGMA_BASE}/teams/${teamId}/projects`, {
+  const projectsRes = await figmaFetch(`${FIGMA_BASE}/teams/${teamId}/projects`, {
     headers: { 'X-Figma-Token': token },
   });
   if (!projectsRes.ok) throw new Error(`Figma team projects failed: ${projectsRes.status} ${await projectsRes.text()}`);
@@ -75,7 +92,7 @@ async function listTeamFiles(token, teamId, projectIdsFilter = []) {
   const files = [];
   for (const project of projects) {
     if (projectIdsFilter.length && !projectIdsFilter.includes(project.id)) continue;
-    const filesRes = await fetch(`${FIGMA_BASE}/projects/${project.id}/files`, {
+    const filesRes = await figmaFetch(`${FIGMA_BASE}/projects/${project.id}/files`, {
       headers: { 'X-Figma-Token': token },
     });
     if (!filesRes.ok) continue;
@@ -119,7 +136,7 @@ async function ensureFolder(drive, parentId, folderName) {
 /** Export one file's frames and upload to targetFolderId. If combinePdfPerFile and format is pdf, upload one merged PDF. */
 async function exportOneFile(token, fileKey, targetFolderId, format, drive, opts = {}) {
   const { combinePdfPerFile = false, fileNameForDeck = '' } = opts;
-  const fileRes = await fetch(`${FIGMA_BASE}/files/${fileKey}`, {
+  const fileRes = await figmaFetch(`${FIGMA_BASE}/files/${fileKey}`, {
     headers: { 'X-Figma-Token': token },
   });
   if (!fileRes.ok) {
@@ -132,7 +149,7 @@ async function exportOneFile(token, fileKey, targetFolderId, format, drive, opts
   const frames = collectFrameNodes(document);
   if (frames.length === 0) return 0;
   const ids = frames.map((f) => f.id).join(',');
-  const imgRes = await fetch(
+  const imgRes = await figmaFetch(
     `${FIGMA_BASE}/images/${fileKey}?ids=${encodeURIComponent(ids)}&format=${format}`,
     { headers: { 'X-Figma-Token': token } }
   );
@@ -253,10 +270,15 @@ async function main() {
         console.log('skipped (file not found or no access).');
         continue;
       }
+      if (msg.includes('429') || msg.includes('Rate limit')) {
+        console.log('skipped (rate limit still exceeded after retries).');
+        continue;
+      }
       throw err;
     }
     totalFrames += count;
     console.log(`${count} frame(s).`);
+    await sleep(DELAY_BETWEEN_FILES_MS);
   }
   console.log('Done. Total frames uploaded:', totalFrames);
 }
