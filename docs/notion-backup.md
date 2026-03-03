@@ -67,7 +67,7 @@ notion-backup-20260303T030000Z/
 | **Backup script** | `notion/scripts/backup_to_gcs.py` |
 | **Python deps** | `notion/requirements.txt` |
 | **Workflow** | `.github/workflows/notion-backup.yml` |
-| **Terraform (bucket)** | `terraform/projects/riley/dev/notion-backup.tf` |
+| **Terraform (bucket)** | `terraform/projects/notion/prod/` |
 | **This doc** | `docs/notion-backup.md` |
 
 ## Setup
@@ -89,18 +89,23 @@ notion-backup-20260303T030000Z/
 
 ### 3. Provision the GCS bucket
 
-The bucket is defined in Terraform alongside the existing Riley dev resources. Merge this branch, then apply:
+The bucket lives in its own Terraform project at `terraform/projects/notion/prod/`. Copy the example tfvars, fill in your project ID, then plan and apply:
 
 ```bash
-cd terraform/projects/riley/dev
+cd terraform/projects/notion/prod
+cp terraform.tfvars.example terraform.tfvars
+# edit terraform.tfvars with your GCP project ID
+
 terraform init
 terraform plan    # review the new bucket + IAM binding
 terraform apply
 ```
 
+Alternatively, merge this branch and let the Terraform CI workflow handle the apply on push to main. The `notion` project is registered in `.github/workflows/terraform.yml` and will be planned on PRs / applied on merge automatically.
+
 ### 4. IAM: grant the GitHub Actions service account write access
 
-The Terraform config adds `roles/storage.objectCreator` on the backup bucket for the project's default service account. If you use a dedicated SA for the workflow, update the `iam_bindings` in `notion-backup.tf`.
+The Terraform config adds `roles/storage.objectCreator` on the backup bucket for the GitHub Actions service account. By default this is `terraform-github-actions@<PROJECT_ID>.iam.gserviceaccount.com`. Override with the `backup_writer_service_account` variable if you use a different SA.
 
 The existing Workload Identity Federation setup (used by the Terraform and Figma workflows) already allows the GitHub Actions runner to authenticate as the SA — no additional WIF config is needed.
 
