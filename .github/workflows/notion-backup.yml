@@ -1,0 +1,64 @@
+# Nightly full backup of the Notion workspace to Google Cloud Storage.
+# See docs/notion-backup.md for architecture and setup.
+name: Notion backup to GCS
+
+on:
+  schedule:
+    - cron: '0 3 * * *' # 03:00 UTC daily
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry-run (export locally but skip GCS upload)'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  PYTHON_VERSION: '3.12'
+  GCS_BUCKET_NAME: '${{ secrets.GCP_PROJECT_ID }}-notion-backups'
+  GCS_PREFIX: 'backups/'
+  WORKLOAD_IDENTITY_PROVIDER: 'projects/${{ secrets.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+  SERVICE_ACCOUNT: 'terraform-github-actions@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com'
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.SERVICE_ACCOUNT }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+        working-directory: notion
+
+      - name: Run Notion backup
+        env:
+          NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
+          GCS_BUCKET_NAME: ${{ env.GCS_BUCKET_NAME }}
+          GCS_PREFIX: ${{ env.GCS_PREFIX }}
+        run: python scripts/backup_to_gcs.py
+        working-directory: notion
+
+      - name: Upload local archive as artifact (safety net)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notion-backup-${{ github.run_number }}
+          path: /tmp/notion-backup/*.tar.gz
+          retention-days: 7
+          if-no-files-found: warn
