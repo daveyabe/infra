@@ -1,0 +1,20 @@
+# Copy this file to terraform.tfvars and fill in your values
+# Notion backup — production
+
+gcp_project_id = "my-gcp-project-id"
+region         = "northamerica-northeast2"
+
+common_labels = {
+  managed_by = "terraform"
+  team       = "platform"
+}
+
+# --- Notion backup bucket ---
+backup_bucket_location    = "US"
+backup_nearline_age_days  = 30
+backup_coldline_age_days  = 90
+backup_retention_days     = 365
+
+# Service account that writes backups (GitHub Actions SA).
+# Defaults to terraform-github-actions@<project>.iam.gserviceaccount.com
+# backup_writer_service_account = "terraform-github-actions@my-gcp-project-id.iam.gserviceaccount.com"
