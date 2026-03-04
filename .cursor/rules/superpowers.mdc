@@ -1,0 +1,31 @@
+---
+description: Check superpowers skills before starting any task
+alwaysApply: true
+---
+
+# Superpowers Skills
+
+Before starting any task, check if a superpowers skill applies. If there's even a small chance one fits, read and follow it before doing anything else — including asking clarifying questions.
+
+Skills live in `~/.cursor/skills/superpowers/` and are listed in your agent_skills. Read the SKILL.md file before using.
+
+## When to invoke which skill
+
+| Trigger | Skill |
+|---------|-------|
+| Any creative work: new feature, component, behavior change | `brainstorming` |
+| You have a spec or requirements for a multi-step task | `writing-plans` |
+| Executing a written implementation plan | `executing-plans` |
+| 2+ independent tasks that can be parallelized | `dispatching-parallel-agents` or `subagent-driven-development` |
+| Bug, test failure, or unexpected behavior | `systematic-debugging` |
+| Implementing any feature or bugfix | `test-driven-development` |
+| About to claim work is done, fixed, or passing | `verification-before-completion` |
+| Completing a feature or before merging | `requesting-code-review` |
+| Received code review feedback | `receiving-code-review` |
+| Implementation complete, deciding how to integrate | `finishing-a-development-branch` |
+| Need isolation from current workspace | `using-git-worktrees` |
+
+## Priority order
+
+1. **Process skills first** (brainstorming, debugging) — these determine the approach
+2. **Implementation skills second** — these guide execution
