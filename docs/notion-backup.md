@@ -32,9 +32,24 @@ Perform a full nightly backup of all Notion databases and pages, storing timesta
 |----------|-------------|--------|
 | **Databases** | `GET /databases/{id}` + `POST /databases/{id}/query` | Schema (`schema.json`) + all row pages |
 | **Pages** | `GET /pages/{id}` + `GET /blocks/{id}/children` (recursive) | Properties (`properties.json`) + full block tree (`content.json`) |
-| **Manifest** | Generated | Timestamp, stats (page/db/block/API-call counts) |
+| **Media files** | HTTP GET on signed/external URLs found in blocks and properties | Downloaded into `media/` per page with `media_manifest.json` |
+| **Manifest** | Generated | Timestamp, stats (page/db/block/media/API-call counts) |
 
 Pages that belong to a database are exported as rows within that database's directory (to avoid duplication).
+
+### Media file coverage
+
+The backup script downloads actual file bytes (not just URLs) for all media embedded in the workspace:
+
+| Source | Block / property types |
+|--------|-----------------------|
+| **Content blocks** | `image`, `video`, `pdf`, `file`, `audio` |
+| **Page metadata** | Cover image, icon (when file-hosted) |
+| **Database properties** | Any `files`-type property (attachments on rows) |
+
+Both **Notion-hosted files** (S3 signed URLs, expire in 1 hour) and **externally-linked files** are downloaded. Notion-hosted URLs are fetched immediately during block traversal while the signed URL is still valid.
+
+Each page that contains media gets a `media/` directory and a `media_manifest.json` mapping each downloaded file back to its source URL, block ID, and hosting type (`file` vs `external`).
 
 ## Backup archive structure
 
@@ -48,15 +63,20 @@ notion-backup-20260303T030000Z/
 │   │   └── rows/
 │   │       ├── Spice_2a81d62693dc/
 │   │       │   ├── properties.json
-│   │       │   └── content.json
+│   │       │   ├── content.json
+│   │       │   ├── media_manifest.json
+│   │       │   └── media/
+│   │       │       ├── a1b2c3d4_9f8e7d6c5b4a.png
+│   │       │       └── e5f6a7b8_3c2d1e0f9a8b.pdf
 │   │       └── …
-│   ├── Studio_Cycles_25b1d62693dc/
-│   │   └── …
 │   └── …
 └── pages/
     ├── Engineering_Standup_3181d62693dc/
     │   ├── properties.json
-    │   └── content.json
+    │   ├── content.json
+    │   ├── media_manifest.json
+    │   └── media/
+    │       └── c4d5e6f7_1a2b3c4d5e6f.jpg
     └── …
 ```
 
@@ -126,7 +146,7 @@ gsutil ls gs://<PROJECT_ID>-notion-backups/backups/
 | Nearline | $0.010/GB/mo | Days 30–90 |
 | Coldline | $0.007/GB/mo | Days 90–365 |
 
-A typical Notion workspace with dozens of databases and hundreds of pages produces archives in the 5–50 MB range. Annual storage cost at that scale is well under $1.
+Without media, a typical workspace produces archives in the 5–50 MB range (well under $1/year). With media files included, archives scale with your content — a workspace with hundreds of images and document attachments may produce 500 MB–2 GB per backup. At that size, annual storage cost is roughly $2–8 with lifecycle tiering.
 
 ## Durability and availability
 
@@ -146,10 +166,28 @@ A typical Notion workspace with dozens of databases and hundreds of pages produc
    tar xzf notion-backup-<TIMESTAMP>.tar.gz
    ```
 3. Each page's `properties.json` contains Notion API properties; `content.json` contains the full block tree. These can be replayed through the Notion API to recreate pages, or used as a reference for manual reconstruction.
+4. Media files are in `media/` with original extensions. `media_manifest.json` maps each file back to its source URL, block ID, and type so you can re-upload or re-link them.
+
+## Configuration
+
+| Environment variable | Default | Description |
+|---------------------|---------|-------------|
+| `NOTION_API_TOKEN` | *(required)* | Notion internal integration token |
+| `GCS_BUCKET_NAME` | *(required)* | Target GCS bucket |
+| `GCS_PREFIX` | `backups/` | Object prefix inside the bucket |
+| `DOWNLOAD_MEDIA` | `true` | Download media files (`true` / `false`) |
+| `MAX_MEDIA_SIZE_MB` | `100` | Skip individual files larger than this |
+| `REQUEST_DELAY` | `0.35` | Seconds between Notion API calls |
+| `PAGE_SIZE` | `100` | Pagination page size (max 100) |
+| `BACKUP_DIR` | `/tmp/notion-backup` | Local scratch directory |
+
+To disable media downloads (JSON-only backup), set `DOWNLOAD_MEDIA=false` in the workflow or pass it as a workflow dispatch input.
 
 ## Rate limits
 
 The Notion API has a rate limit of 3 requests/second per integration. The backup script throttles at ~2.8 req/s (0.35s delay) by default and retries on HTTP 429 with exponential backoff. For very large workspaces, increase `REQUEST_DELAY` via the environment variable.
+
+Media file downloads are separate HTTP requests to S3/external hosts and are not subject to the Notion API rate limit, though they do consume runner bandwidth and disk. Files exceeding `MAX_MEDIA_SIZE_MB` (default 100 MB) are skipped with a warning.
 
 ## Monitoring
 

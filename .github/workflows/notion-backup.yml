@@ -7,11 +7,16 @@ on:
     - cron: '0 3 * * *' # 03:00 UTC daily
   workflow_dispatch:
     inputs:
-      dry_run:
-        description: 'Dry-run (export locally but skip GCS upload)'
+      download_media:
+        description: 'Download media files (images, videos, PDFs, etc.)'
         required: false
         type: boolean
-        default: false
+        default: true
+      max_media_size_mb:
+        description: 'Skip individual media files larger than this (MB)'
+        required: false
+        type: string
+        default: '100'
 
 env:
   PYTHON_VERSION: '3.12'
@@ -51,6 +56,8 @@ jobs:
           NOTION_API_TOKEN: ${{ secrets.NOTION_API_TOKEN }}
           GCS_BUCKET_NAME: ${{ env.GCS_BUCKET_NAME }}
           GCS_PREFIX: ${{ env.GCS_PREFIX }}
+          DOWNLOAD_MEDIA: ${{ inputs.download_media != '' && inputs.download_media || 'true' }}
+          MAX_MEDIA_SIZE_MB: ${{ inputs.max_media_size_mb || '100' }}
         run: python scripts/backup_to_gcs.py
         working-directory: notion
 

@@ -4,7 +4,9 @@ Notion workspace backup → Google Cloud Storage.
 
 Discovers all accessible pages and databases via the Notion API,
 exports their full content (properties, blocks, database rows) as JSON,
-packages them into a timestamped .tar.gz archive, and uploads to GCS.
+downloads all embedded media files (images, videos, PDFs, audio, file
+attachments, covers, icons), packages everything into a timestamped
+.tar.gz archive, and uploads to GCS.
 
 Required environment variables:
   NOTION_API_TOKEN   – Notion internal integration token
@@ -16,8 +18,11 @@ Optional:
   NOTION_API_VERSION – API version header (default: 2022-06-28)
   PAGE_SIZE          – Pagination page size (default: 100, max 100)
   REQUEST_DELAY      – Seconds between API calls to respect rate limits (default: 0.35)
+  DOWNLOAD_MEDIA     – Download media files: "true" (default) or "false"
+  MAX_MEDIA_SIZE_MB  – Skip individual files larger than this (default: 100)
 """
 
+import hashlib
 import json
 import logging
 import os
@@ -26,6 +31,7 @@ import tarfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse, unquote
 
 import requests
 from google.cloud import storage
@@ -44,6 +50,9 @@ BACKUP_DIR = Path(os.environ.get("BACKUP_DIR", "/tmp/notion-backup"))
 API_VERSION = os.environ.get("NOTION_API_VERSION", "2022-06-28")
 PAGE_SIZE = int(os.environ.get("PAGE_SIZE", "100"))
 REQUEST_DELAY = float(os.environ.get("REQUEST_DELAY", "0.35"))
+DOWNLOAD_MEDIA = os.environ.get("DOWNLOAD_MEDIA", "true").lower() == "true"
+MAX_MEDIA_SIZE_MB = float(os.environ.get("MAX_MEDIA_SIZE_MB", "100"))
+MAX_MEDIA_BYTES = int(MAX_MEDIA_SIZE_MB * 1024 * 1024)
 
 BASE_URL = "https://api.notion.com/v1"
 HEADERS = {
@@ -52,7 +61,18 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 
-stats = {"pages": 0, "databases": 0, "blocks": 0, "api_calls": 0}
+MEDIA_BLOCK_TYPES = {"image", "video", "pdf", "file", "audio"}
+
+stats = {
+    "pages": 0,
+    "databases": 0,
+    "blocks": 0,
+    "api_calls": 0,
+    "media_downloaded": 0,
+    "media_skipped": 0,
+    "media_failed": 0,
+    "media_bytes": 0,
+}
 
 
 def api_request(method: str, url: str, **kwargs) -> dict:
@@ -70,6 +90,156 @@ def api_request(method: str, url: str, **kwargs) -> dict:
         resp.raise_for_status()
         return resp.json()
     raise RuntimeError(f"Notion API returned 429 after {max_retries} retries: {url}")
+
+
+def _file_url_from_object(file_obj: dict) -> str | None:
+    """Extract the URL from a Notion file object (hosted or external)."""
+    if not isinstance(file_obj, dict):
+        return None
+    ftype = file_obj.get("type")
+    if ftype == "file":
+        return file_obj.get("file", {}).get("url")
+    if ftype == "external":
+        return file_obj.get("external", {}).get("url")
+    return None
+
+
+def _filename_for_url(url: str, block_id: str) -> str:
+    """Derive a stable, filesystem-safe filename from a URL.
+
+    Uses a short content-hash of the URL path (pre-query-string) so the
+    same Notion-hosted asset always maps to the same filename even when
+    the signed query parameters rotate between API calls.
+    """
+    parsed = urlparse(url)
+    path_tail = unquote(parsed.path.rsplit("/", 1)[-1]) if parsed.path else ""
+    _, _, ext = path_tail.rpartition(".")
+    ext = ext[:10] if ext else "bin"
+    stable = parsed._replace(query="", fragment="").geturl()
+    url_hash = hashlib.sha256(stable.encode()).hexdigest()[:12]
+    short_id = block_id.replace("-", "")[:8]
+    return f"{short_id}_{url_hash}.{ext}"
+
+
+def download_media_file(url: str, dest_dir: Path, filename: str) -> Path | None:
+    """Download a single media file. Returns local path or None on failure."""
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = dest_dir / filename
+
+    if dest_path.exists():
+        stats["media_skipped"] += 1
+        return dest_path
+
+    try:
+        with requests.get(url, stream=True, timeout=120) as resp:
+            resp.raise_for_status()
+            content_length = int(resp.headers.get("Content-Length", 0))
+            if content_length > MAX_MEDIA_BYTES:
+                log.warning(
+                    "Skipping oversized media (%d MB): %s",
+                    content_length // (1024 * 1024),
+                    filename,
+                )
+                stats["media_skipped"] += 1
+                return None
+
+            downloaded = 0
+            with open(dest_path, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=256 * 1024):
+                    downloaded += len(chunk)
+                    if downloaded > MAX_MEDIA_BYTES:
+                        log.warning("Media exceeded size limit mid-stream: %s", filename)
+                        stats["media_skipped"] += 1
+                        dest_path.unlink(missing_ok=True)
+                        return None
+                    f.write(chunk)
+
+            stats["media_downloaded"] += 1
+            stats["media_bytes"] += downloaded
+            return dest_path
+
+    except Exception as exc:
+        log.warning("Failed to download media %s: %s", filename, exc)
+        dest_path.unlink(missing_ok=True)
+        stats["media_failed"] += 1
+        return None
+
+
+def collect_media_from_blocks(blocks: list[dict], media_dir: Path) -> list[dict]:
+    """Walk the block tree and download every media file found.
+
+    Returns a manifest list of {block_id, block_type, source_url,
+    local_file, hosting} entries.
+    """
+    manifest: list[dict] = []
+
+    def _walk(block_list: list[dict]) -> None:
+        for block in block_list:
+            block_type = block.get("type", "")
+            block_id = block.get("id", "unknown")
+
+            if block_type in MEDIA_BLOCK_TYPES:
+                file_obj = block.get(block_type, {})
+                url = _file_url_from_object(file_obj)
+                if url:
+                    fname = _filename_for_url(url, block_id)
+                    local = download_media_file(url, media_dir, fname)
+                    manifest.append({
+                        "block_id": block_id,
+                        "block_type": block_type,
+                        "source_url": url,
+                        "hosting": file_obj.get("type", "unknown"),
+                        "local_file": str(local.relative_to(media_dir)) if local else None,
+                    })
+
+            if block_type == "bookmark":
+                pass
+            children = block.get("_children", [])
+            if children:
+                _walk(children)
+
+    _walk(blocks)
+    return manifest
+
+
+def collect_media_from_page(page: dict, media_dir: Path) -> list[dict]:
+    """Download media from page-level fields: cover, icon, and files properties."""
+    manifest: list[dict] = []
+    page_id = page.get("id", "unknown")
+
+    for field_name in ("cover", "icon"):
+        field = page.get(field_name)
+        if not field:
+            continue
+        url = _file_url_from_object(field)
+        if url:
+            fname = _filename_for_url(url, f"{page_id}-{field_name}")
+            local = download_media_file(url, media_dir, fname)
+            manifest.append({
+                "block_id": page_id,
+                "block_type": f"page_{field_name}",
+                "source_url": url,
+                "hosting": field.get("type", "unknown"),
+                "local_file": str(local.relative_to(media_dir)) if local else None,
+            })
+
+    for prop in page.get("properties", {}).values():
+        if prop.get("type") != "files":
+            continue
+        for file_entry in prop.get("files", []):
+            url = _file_url_from_object(file_entry)
+            if url:
+                fname = _filename_for_url(url, page_id)
+                local = download_media_file(url, media_dir, fname)
+                manifest.append({
+                    "block_id": page_id,
+                    "block_type": "property_file",
+                    "source_url": url,
+                    "hosting": file_entry.get("type", "unknown"),
+                    "local_file": str(local.relative_to(media_dir)) if local else None,
+                })
+
+    return manifest
 
 
 def search_all(filter_value: str | None = None) -> list[dict]:
@@ -160,7 +330,7 @@ def extract_title(page: dict) -> str:
 
 
 def backup_page(page: dict, dest: Path) -> None:
-    """Export a single page: metadata + full block tree."""
+    """Export a single page: metadata + full block tree + media files."""
     page_id = page["id"]
     title = extract_title(page)
     dirname = safe_filename(title, page_id)
@@ -168,12 +338,20 @@ def backup_page(page: dict, dest: Path) -> None:
 
     write_json(page_dir / "properties.json", page)
 
+    blocks: list[dict] = []
     try:
         blocks = retrieve_block_children(page_id)
         write_json(page_dir / "content.json", blocks)
     except requests.HTTPError as exc:
         log.warning("Could not retrieve blocks for page %s (%s): %s", title, page_id, exc)
         write_json(page_dir / "content.json", {"error": str(exc)})
+
+    if DOWNLOAD_MEDIA:
+        media_dir = page_dir / "media"
+        media_manifest = collect_media_from_page(page, media_dir)
+        media_manifest.extend(collect_media_from_blocks(blocks, media_dir))
+        if media_manifest:
+            write_json(page_dir / "media_manifest.json", media_manifest)
 
     stats["pages"] += 1
 
@@ -279,6 +457,14 @@ def main() -> None:
         "Export complete — pages: %d, databases: %d, blocks: %d, API calls: %d",
         stats["pages"], stats["databases"], stats["blocks"], stats["api_calls"],
     )
+    if DOWNLOAD_MEDIA:
+        log.info(
+            "Media — downloaded: %d (%.1f MB), skipped: %d, failed: %d",
+            stats["media_downloaded"],
+            stats["media_bytes"] / (1024 * 1024),
+            stats["media_skipped"],
+            stats["media_failed"],
+        )
 
     archive = create_archive(dest, timestamp)
     gcs_uri = upload_to_gcs(archive, timestamp)
