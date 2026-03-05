@@ -19,7 +19,7 @@ on:
         type: choice
         options:
           - riley
-          - notion
+          - notion-backup
           - placeholder  # Add new projects here
       environment:
         description: 'Environment to deploy'
@@ -51,8 +51,8 @@ jobs:
       riley-dev: ${{ steps.changes.outputs.riley-dev }}
       riley-staging: ${{ steps.changes.outputs.riley-staging }}
       riley-prod: ${{ steps.changes.outputs.riley-prod }}
-      # Notion project
-      notion-prod: ${{ steps.changes.outputs.notion-prod }}
+      # Notion backup project
+      notion-backup-prod: ${{ steps.changes.outputs.notion-backup-prod }}
       # Placeholder project (add new projects here)
       placeholder-dev: ${{ steps.changes.outputs.placeholder-dev }}
       placeholder-staging: ${{ steps.changes.outputs.placeholder-staging }}
@@ -75,8 +75,8 @@ jobs:
             riley-prod:
               - 'terraform/projects/riley/prod/**'
               - 'terraform/modules/**'
-            notion-prod:
-              - 'terraform/projects/notion/prod/**'
+            notion-backup-prod:
+              - 'terraform/projects/notion-backup/prod/**'
               - 'terraform/modules/**'
             placeholder-dev:
               - 'terraform/projects/placeholder/dev/**'
@@ -98,7 +98,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [riley, notion, placeholder]  # Add new projects here
+        project: [riley, notion-backup, placeholder]  # Add new projects here
         environment: [dev, staging, prod]
     
     permissions:
@@ -118,7 +118,7 @@ jobs:
             riley-dev) CHANGED="${{ needs.detect-changes.outputs.riley-dev }}" ;;
             riley-staging) CHANGED="${{ needs.detect-changes.outputs.riley-staging }}" ;;
             riley-prod) CHANGED="${{ needs.detect-changes.outputs.riley-prod }}" ;;
-            notion-prod) CHANGED="${{ needs.detect-changes.outputs.notion-prod }}" ;;
+            notion-backup-prod) CHANGED="${{ needs.detect-changes.outputs.notion-backup-prod }}" ;;
             placeholder-dev) CHANGED="${{ needs.detect-changes.outputs.placeholder-dev }}" ;;
             placeholder-staging) CHANGED="${{ needs.detect-changes.outputs.placeholder-staging }}" ;;
             placeholder-prod) CHANGED="${{ needs.detect-changes.outputs.placeholder-prod }}" ;;
@@ -216,7 +216,7 @@ jobs:
       fail-fast: false
       max-parallel: 1  # Apply one project/environment at a time
       matrix:
-        project: [riley, notion, placeholder]  # Add new projects here
+        project: [riley, notion-backup, placeholder]  # Add new projects here
         environment: [dev, staging, prod]
     
     permissions:
@@ -235,7 +235,7 @@ jobs:
             riley-dev) CHANGED="${{ needs.detect-changes.outputs.riley-dev }}" ;;
             riley-staging) CHANGED="${{ needs.detect-changes.outputs.riley-staging }}" ;;
             riley-prod) CHANGED="${{ needs.detect-changes.outputs.riley-prod }}" ;;
-            notion-prod) CHANGED="${{ needs.detect-changes.outputs.notion-prod }}" ;;
+            notion-backup-prod) CHANGED="${{ needs.detect-changes.outputs.notion-backup-prod }}" ;;
             placeholder-dev) CHANGED="${{ needs.detect-changes.outputs.placeholder-dev }}" ;;
             placeholder-staging) CHANGED="${{ needs.detect-changes.outputs.placeholder-staging }}" ;;
             placeholder-prod) CHANGED="${{ needs.detect-changes.outputs.placeholder-prod }}" ;;

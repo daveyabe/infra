@@ -87,7 +87,7 @@ notion-backup-20260303T030000Z/
 | **Backup script** | `notion/scripts/backup_to_gcs.py` |
 | **Python deps** | `notion/requirements.txt` |
 | **Workflow** | `.github/workflows/notion-backup.yml` |
-| **Terraform (bucket)** | `terraform/projects/notion/prod/` |
+| **Terraform (bucket)** | `terraform/projects/notion-backup/prod/` |
 | **This doc** | `docs/notion-backup.md` |
 
 ## Setup
@@ -109,10 +109,10 @@ notion-backup-20260303T030000Z/
 
 ### 3. Provision the GCS bucket
 
-The bucket lives in its own Terraform project at `terraform/projects/notion/prod/`. Copy the example tfvars, fill in your project ID, then plan and apply:
+The bucket lives in its own Terraform project at `terraform/projects/notion-backup/prod/`. Copy the example tfvars, fill in your project ID, then plan and apply:
 
 ```bash
-cd terraform/projects/notion/prod
+cd terraform/projects/notion-backup/prod
 cp terraform.tfvars.example terraform.tfvars
 # edit terraform.tfvars with your GCP project ID
 
@@ -121,7 +121,7 @@ terraform plan    # review the new bucket + IAM binding
 terraform apply
 ```
 
-Alternatively, merge this branch and let the Terraform CI workflow handle the apply on push to main. The `notion` project is registered in `.github/workflows/terraform.yml` and will be planned on PRs / applied on merge automatically.
+Alternatively, merge this branch and let the Terraform CI workflow handle the apply on push to main. The `notion-backup` project is registered in `.github/workflows/terraform.yml` and will be planned on PRs / applied on merge automatically.
 
 ### 4. IAM: grant the GitHub Actions service account write access
 

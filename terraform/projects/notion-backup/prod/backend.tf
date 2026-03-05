@@ -7,6 +7,6 @@
 # terraform {
 #   backend "gcs" {
 #     bucket = "PROJECT_ID-tfstate"
-#     prefix = "projects/notion/prod"
+#     prefix = "projects/notion-backup/prod"
 #   }
 # }

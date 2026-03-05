@@ -6,7 +6,7 @@
 #   STANDARD → NEARLINE → COLDLINE → delete
 
 locals {
-  project = "notion"
+  project = "notion-backup"
   env     = "prod"
   labels = merge(var.common_labels, {
     project     = local.project
