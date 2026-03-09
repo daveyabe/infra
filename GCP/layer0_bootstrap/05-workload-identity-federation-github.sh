@@ -53,7 +53,7 @@ else
     --location=global \
     --project="$PROJECT_ID" \
     --display-name="GitHub Actions Pool" \
-    --description="Workload Identity Pool for GitHub Actions"
+    --description="Workload Identity Pool for GitHub Actions (DASH)"
 fi
 
 # Create OIDC Provider (GitHub Actions)
@@ -69,7 +69,7 @@ else
     --workload-identity-pool="$WIF_POOL_ID" \
     --project="$PROJECT_ID" \
     --display-name="GitHub Provider" \
-    --description="OIDC provider for GitHub Actions" \
+    --description="OIDC provider for GitHub Actions (DASH)" \
     --issuer-uri="https://token.actions.githubusercontent.com" \
     --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
     --attribute-condition="assertion.repository_owner == '$GITHUB_ORG'"
@@ -84,7 +84,7 @@ else
   gcloud iam service-accounts create "$SERVICE_ACCOUNT_ID" \
     --project="$PROJECT_ID" \
     --display-name="GitHub Actions (WIF)" \
-    --description="Service account for GitHub Actions via Workload Identity Federation"
+    --description="Service account for GitHub Actions via Workload Identity Federation (DASH)"
 fi
 
 # Grant project roles needed for Terraform (Artifact Registry, Cloud Run, IAM)
