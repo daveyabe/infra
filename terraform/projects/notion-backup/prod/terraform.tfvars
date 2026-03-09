@@ -1,7 +1,7 @@
 # Copy this file to terraform.tfvars and fill in your values
 # Notion backup — production
 
-gcp_project_id = "natural-iridium-469419-f7"
+gcp_project_id = "n43-studio-sandbox-dev"
 region         = "northamerica-northeast2"
 
 common_labels = {
