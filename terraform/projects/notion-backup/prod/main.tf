@@ -54,7 +54,7 @@ module "notion_backup_bucket" {
 
   iam_bindings = [
     {
-      role   = "roles/storage.objectCreator"
+      role   = "roles/storage.objectAdmin"
       member = "serviceAccount:${local.writer_sa}"
     },
   ]
