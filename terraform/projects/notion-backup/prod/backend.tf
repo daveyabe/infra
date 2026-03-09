@@ -4,9 +4,9 @@
 # Replace PROJECT_ID with your actual GCP project ID.
 # Run `terraform init` after uncommenting.
 
-# terraform {
-#   backend "gcs" {
-#     bucket = "PROJECT_ID-tfstate"
-#     prefix = "projects/notion-backup/prod"
-#   }
-# }
+terraform {
+  backend "gcs" {
+    bucket = "natural-iridium-469419-f7-tfstate"
+    prefix = "projects/notion-backup/prod"
+  }
+}
