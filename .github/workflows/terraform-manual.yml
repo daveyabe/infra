@@ -28,8 +28,8 @@ on:
 
 env:
   TF_VERSION: '1.7.0'
-  WORKLOAD_IDENTITY_PROVIDER: 'projects/${{ secrets.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
-  SERVICE_ACCOUNT: 'terraform-github-actions@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com'
+  WORKLOAD_IDENTITY_PROVIDER: 'projects/484557673107/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+  SERVICE_ACCOUNT: 'terraform-github-actions@n43-studio-sandbox-dev.iam.gserviceaccount.com'
 
 jobs:
   terraform:

@@ -34,6 +34,15 @@ echo "  Provider:      $WIF_PROVIDER_ID"
 echo "  Service Acct:  $SERVICE_ACCOUNT_ID"
 echo ""
 
+# Verify project access before changing default project (avoids confusing prompt then failure)
+if ! gcloud projects describe "$PROJECT_ID" --project="$PROJECT_ID" &>/dev/null; then
+  echo "ERROR: Cannot access project '$PROJECT_ID'."
+  echo "  - Ensure the project ID is correct and the project exists."
+  echo "  - Your account ($(gcloud config get-value account 2>/dev/null)) needs permission to access this project."
+  echo "  - Have a project Owner grant you a role (e.g. roles/viewer, roles/owner, or roles/resourcemanager.projectIamAdmin) and try again."
+  exit 1
+fi
+
 gcloud config set project "$PROJECT_ID"
 
 # Project number is required for principalSet
