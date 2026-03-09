@@ -34,7 +34,7 @@ define require_billing
 endef
 
 .DEFAULT_GOAL := help
-.PHONY: help all provision link-billing enable-apis workload-identity increase-quotas
+.PHONY: help all provision link-billing enable-apis sa-account workload-identity increase-quotas
 
 help:
 	@echo "GCP Bootstrap — full project provisioning"
