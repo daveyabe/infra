@@ -39,7 +39,8 @@ mkdir actions-runner
 tar xzf ./actions-runner-linux-x64-2.331.0.tar.gz -C actions-runner
 chown -R ubuntu:ubuntu /home/ubuntu/actions-runner
 
-RUNNER_TOKEN=$(curl -L -X POST -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" https://api.github.com/repos/N43-Studio/Riley/actions/runners/registration-token| jq -r '.token')
+REPO_PATH=$(echo "$URL" | sed 's|https://github.com/||')
+RUNNER_TOKEN=$(curl -L -X POST -H "Accept: application/vnd.github+json" -H "Authorization: Bearer $TOKEN" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${REPO_PATH}/actions/runners/registration-token"| jq -r '.token')
 
 # Configure and Install Service as Ubuntu User
 sudo -u ubuntu $RUNNER_DIR/config.sh --url $URL --token $RUNNER_TOKEN --name gcp-$HOSTNAME --labels $LABELS --unattended --replace
