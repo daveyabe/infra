@@ -34,7 +34,7 @@ define require_billing
 endef
 
 .DEFAULT_GOAL := help
-.PHONY: help all provision link-billing enable-apis sa-account workload-identity increase-quotas
+.PHONY: help all provision link-billing enable-apis workload-identity increase-quotas
 
 help:
 	@echo "GCP Bootstrap — full project provisioning"
@@ -58,8 +58,7 @@ help:
 	@echo "  provision              Create project (01-provision-project.sh)"
 	@echo "  link-billing           Link billing account (02-link-billing.sh)"
 	@echo "  enable-apis            Enable default + AI APIs (03-enable-apis.sh)"
-	@echo "  sa-account             Create Terraform SA and roles (04-SA-account-TF.sh)"
-	@echo "  workload-identity      Set up WIF for GitHub Actions (05-workload-identity-federation-github.sh)"
+	@echo "  workload-identity      Set up WIF + Terraform SA and roles (05-workload-identity-federation-github.sh)"
 	@echo "  increase-quotas        Request common quota increases (06-increase-service-quotas.sh)"
 	@echo ""
 	@echo "Examples:"
@@ -67,8 +66,8 @@ help:
 	@echo "  make provision PROJECT_ID=my-proj ORGANIZATION_ID=833531661158"
 	@echo "  make enable-apis PROJECT_ID=my-proj EXTRA_APIS=container.googleapis.com"
 
-# Full pipeline: all steps in order
-all: provision link-billing enable-apis sa-account workload-identity increase-quotas
+# Full pipeline: all steps in order (sa-account removed; 05 creates WIF SA and grants Terraform roles)
+all: provision link-billing enable-apis workload-identity increase-quotas
 	@echo ""
 	@echo "=== Bootstrap complete for project: $(PROJECT_ID) ==="
 
@@ -93,8 +92,8 @@ sa-account: enable-apis
 	$(call require_project,sa-account)
 	$(BOOTSTRAP_DIR)04-SA-account-TF.sh "$(PROJECT_ID)"
 
-# 05 — Workload Identity Federation for GitHub Actions
-workload-identity: sa-account
+# 05 — Workload Identity Federation for GitHub Actions (creates SA + grants Terraform roles)
+workload-identity: enable-apis
 	$(call require_project,workload-identity)
 	$(BOOTSTRAP_DIR)05-workload-identity-federation-github.sh "$(PROJECT_ID)" "$(GITHUB_ORG)" "$(GITHUB_REPO)" "$(SERVICE_ACCOUNT_ID)"
 

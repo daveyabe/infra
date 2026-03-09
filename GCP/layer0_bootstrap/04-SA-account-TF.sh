@@ -1,4 +1,9 @@
 # Set your project ID via command line argument
+#
+# DEPRECATED for the default pipeline: the WIF script (05) now creates the
+# Terraform SA (terraform-github-actions) and grants the same roles. Run this
+# script only if you need a separate key-based SA (terraform-pro) for local
+# Terraform or other non-GitHub use.
 
 set -e
 

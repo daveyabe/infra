@@ -87,6 +87,16 @@ else
     --description="Service account for GitHub Actions via Workload Identity Federation"
 fi
 
+# Grant project roles needed for Terraform (Artifact Registry, Cloud Run, IAM)
+# These were previously in 04-SA-account-TF.sh for terraform-pro; now applied to the WIF SA.
+echo "Granting Terraform provisioning roles to $SERVICE_ACCOUNT_ID..."
+for role in roles/artifactregistry.repoAdmin roles/run.admin roles/iam.serviceAccountAdmin roles/artifactregistry.admin; do
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:${SERVICE_ACCOUNT_ID}@${PROJECT_ID}.iam.gserviceaccount.com" \
+    --role="$role" \
+    --quiet
+done
+
 # Allow the specific GitHub repo to impersonate this service account
 # principalSet restricts to attribute.repository = org/repo
 PRINCIPAL_SET="principalSet://iam.googleapis.com/$POOL_RESOURCE/attribute.repository/$GITHUB_ORG/$GITHUB_REPO"
