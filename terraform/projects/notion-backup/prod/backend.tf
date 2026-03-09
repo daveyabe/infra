@@ -6,7 +6,7 @@
 
 terraform {
   backend "gcs" {
-    bucket = "natural-iridium-469419-f7-tfstate"
+    bucket = "n43-studio-sandbox-dev-tfstate"
     prefix = "projects/notion-backup/prod"
   }
 }
