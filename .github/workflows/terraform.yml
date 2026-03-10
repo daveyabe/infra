@@ -14,21 +14,13 @@ on:
   workflow_dispatch:
     inputs:
       project:
-        description: 'Project to deploy'
+        description: 'Project to deploy (e.g. riley, notion-backup). Run workflow to see available.'
         required: true
-        type: choice
-        options:
-          - riley
-          - notion-backup
-          - placeholder  # Add new projects here
+        type: string
       environment:
-        description: 'Environment to deploy'
+        description: 'Environment (e.g. dev, prod). Run workflow to see available.'
         required: true
-        type: choice
-        options:
-          - dev
-          - staging
-          - prod
+        type: string
       action:
         description: 'Terraform action'
         required: true
@@ -286,12 +278,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check project exists
+      - name: Validate project and environment
         run: |
-          if [[ ! -d "terraform/projects/${{ inputs.project }}/${{ inputs.environment }}" ]]; then
-            echo "Error: terraform/projects/${{ inputs.project }}/${{ inputs.environment }} does not exist"
+          PROJECT="${{ inputs.project }}"
+          ENV="${{ inputs.environment }}"
+          ROOT="terraform/projects"
+          DIR="$ROOT/$PROJECT/$ENV"
+          
+          echo "Available project / environment combinations:"
+          for p in "$ROOT"/*/; do
+            [ -d "$p" ] || continue
+            pname=$(basename "$p")
+            for e in "$p"*/; do
+              [ -d "$e" ] || continue
+              if ls "$e"/*.tf 1>/dev/null 2>&1; then
+                ename=$(basename "$e")
+                echo "  - $pname / $ename"
+              fi
+            done
+          done
+          
+          if [[ ! -d "$DIR" ]]; then
+            echo "::error::Directory does not exist: $DIR"
             exit 1
           fi
+          if ! ls "$DIR"/*.tf 1>/dev/null 2>&1; then
+            echo "::error::No .tf files in $DIR (not a Terraform project root)"
+            exit 1
+          fi
+          echo "Using $DIR"
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
