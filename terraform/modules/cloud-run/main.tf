@@ -1,10 +1,11 @@
 # Cloud Run Service Module
 
 resource "google_cloud_run_v2_service" "service" {
-  name     = var.name
-  location = var.location
-  project  = var.project_id
-  labels   = var.labels
+  name             = var.name
+  location         = var.location
+  project          = var.project_id
+  labels           = var.labels
+  service_account  = var.service_account_email
 
   template {
     timeout = var.timeout
@@ -34,13 +35,6 @@ resource "google_cloud_run_v2_service" "service" {
           name  = env.key
           value = env.value
         }
-      }
-    }
-
-    dynamic "service_account" {
-      for_each = var.service_account_email != null ? [1] : []
-      content {
-        email = var.service_account_email
       }
     }
   }
