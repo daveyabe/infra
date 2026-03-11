@@ -1,7 +1,7 @@
 # Copy this file to terraform.tfvars and fill in your values
 # Langgraph service - development
 
-gcp_project_id = "my-gcp-project-id"
+gcp_project_id = "n43-studio-sandbox-dev"
 region         = "northamerica-northeast2"
 
 common_labels = {
