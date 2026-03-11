@@ -49,6 +49,8 @@ jobs:
       placeholder-dev: ${{ steps.changes.outputs.placeholder-dev }}
       placeholder-staging: ${{ steps.changes.outputs.placeholder-staging }}
       placeholder-prod: ${{ steps.changes.outputs.placeholder-prod }}
+      # Langgraph project
+      langgraph-dev: ${{ steps.changes.outputs.langgraph-dev }}
       # Modules
       modules: ${{ steps.changes.outputs.modules }}
     steps:
@@ -79,6 +81,9 @@ jobs:
             placeholder-prod:
               - 'terraform/projects/placeholder/prod/**'
               - 'terraform/modules/**'
+            langgraph-dev:
+              - 'terraform/projects/langgraph/dev/**'
+              - 'terraform/modules/**'
             modules:
               - 'terraform/modules/**'
 
@@ -90,7 +95,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [riley, notion-backup, placeholder]  # Add new projects here
+        project: [riley, notion-backup, placeholder, langgraph]  # Add new projects here
         environment: [dev, staging, prod]
     
     permissions:
@@ -114,6 +119,7 @@ jobs:
             placeholder-dev) CHANGED="${{ needs.detect-changes.outputs.placeholder-dev }}" ;;
             placeholder-staging) CHANGED="${{ needs.detect-changes.outputs.placeholder-staging }}" ;;
             placeholder-prod) CHANGED="${{ needs.detect-changes.outputs.placeholder-prod }}" ;;
+            langgraph-dev) CHANGED="${{ needs.detect-changes.outputs.langgraph-dev }}" ;;
             *) CHANGED="false" ;;
           esac
           
@@ -208,7 +214,7 @@ jobs:
       fail-fast: false
       max-parallel: 1  # Apply one project/environment at a time
       matrix:
-        project: [riley, notion-backup, placeholder]  # Add new projects here
+        project: [riley, notion-backup, placeholder, langgraph]  # Add new projects here
         environment: [dev, staging, prod]
     
     permissions:
@@ -231,6 +237,7 @@ jobs:
             placeholder-dev) CHANGED="${{ needs.detect-changes.outputs.placeholder-dev }}" ;;
             placeholder-staging) CHANGED="${{ needs.detect-changes.outputs.placeholder-staging }}" ;;
             placeholder-prod) CHANGED="${{ needs.detect-changes.outputs.placeholder-prod }}" ;;
+            langgraph-dev) CHANGED="${{ needs.detect-changes.outputs.langgraph-dev }}" ;;
             *) CHANGED="false" ;;
           esac
           

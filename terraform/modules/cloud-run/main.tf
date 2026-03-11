@@ -7,6 +7,8 @@ resource "google_cloud_run_v2_service" "service" {
   labels   = var.labels
 
   template {
+    timeout = var.timeout
+
     scaling {
       min_instance_count = var.min_instances
       max_instance_count = var.max_instances

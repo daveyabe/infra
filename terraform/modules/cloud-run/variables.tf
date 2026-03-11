@@ -71,3 +71,9 @@ variable "labels" {
   type        = map(string)
   default     = {}
 }
+
+variable "timeout" {
+  description = "Request timeout (string with 's' suffix, e.g. 300s, 3600s). Max 3600s."
+  type        = string
+  default     = "300s"
+}
