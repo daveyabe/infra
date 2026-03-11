@@ -67,12 +67,6 @@ variable "langgraph_allow_unauthenticated" {
   default     = false
 }
 
-variable "langgraph_service_account_email" {
-  description = "Service account for the langgraph revision (null = default compute SA)"
-  type        = string
-  default     = null
-}
-
 variable "langgraph_request_timeout" {
   description = "Cloud Run request timeout (e.g. 300s, 3600s). LangGraph runs can be long; 3600s allows up to 1h."
   type        = string

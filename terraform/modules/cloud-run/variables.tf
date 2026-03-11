@@ -60,8 +60,9 @@ variable "allow_unauthenticated" {
   default     = false
 }
 
+# Unused: service account and WIF are configured in CI/CD. Kept for API compatibility with callers (e.g. riley).
 variable "service_account_email" {
-  description = "Service account for the revision (omit to use default compute SA)"
+  description = "Service account for the revision (unused; set in CI/CD). Kept for compatibility."
   type        = string
   default     = null
 }

@@ -1,11 +1,10 @@
 # Cloud Run Service Module
 
 resource "google_cloud_run_v2_service" "service" {
-  name             = var.name
-  location         = var.location
-  project          = var.project_id
-  labels           = var.labels
-  service_account  = var.service_account_email
+  name     = var.name
+  location = var.location
+  project  = var.project_id
+  labels   = var.labels
 
   template {
     timeout = var.timeout

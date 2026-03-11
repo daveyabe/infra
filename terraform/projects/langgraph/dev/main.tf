@@ -43,7 +43,6 @@ module "cloud_run" {
   cpu                   = var.langgraph_cpu
   memory                = var.langgraph_memory
   allow_unauthenticated = var.langgraph_allow_unauthenticated
-  service_account_email = var.langgraph_service_account_email
   timeout               = var.langgraph_request_timeout
   labels                = local.labels
 }
