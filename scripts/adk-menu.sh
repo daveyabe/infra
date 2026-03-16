@@ -46,6 +46,18 @@ ensure_path() {
   return 0
 }
 
+# Activate venv at ADK_AGENT_PATH/.venv so current shell and child processes use it. Return 1 if no venv.
+activate_venv() {
+  if [[ -z "${ADK_AGENT_PATH:-}" || ! -f "$ADK_AGENT_PATH/.venv/bin/activate" ]]; then
+    return 1
+  fi
+  # shellcheck source=/dev/null
+  source "$ADK_AGENT_PATH/.venv/bin/activate"
+  export VIRTUAL_ENV
+  export PATH
+  return 0
+}
+
 # Path subcommand: show path; when PATH_INTERACTIVE=1 (from menu) and path unset, prompt to set and optionally save.
 cmd_path() {
   load_config
@@ -91,13 +103,12 @@ cmd_run() {
     echo "No .venv at $ADK_AGENT_PATH/.venv. Run 'init' first."
     exit 1
   fi
-  # shellcheck source=/dev/null
-  source "$ADK_AGENT_PATH/.venv/bin/activate"
-  if ! command -v adk >/dev/null 2>&1; then
+  activate_venv || exit 1
+  if [[ ! -x "$ADK_AGENT_PATH/.venv/bin/adk" ]]; then
     echo "google-adk not found. Run 'init' and ensure venv is correct."
     exit 1
   fi
-  adk run "$ADK_AGENT_PATH"
+  "$ADK_AGENT_PATH/.venv/bin/adk" run "$ADK_AGENT_PATH"
 }
 cmd_web() {
   ensure_path || exit 1
@@ -109,15 +120,14 @@ cmd_web() {
     echo "No .venv at $ADK_AGENT_PATH/.venv. Run 'init' first."
     exit 1
   fi
-  # shellcheck source=/dev/null
-  source "$ADK_AGENT_PATH/.venv/bin/activate"
-  if ! command -v adk >/dev/null 2>&1; then
+  activate_venv || exit 1
+  if [[ ! -x "$ADK_AGENT_PATH/.venv/bin/adk" ]]; then
     echo "google-adk not found. Run 'init' and ensure venv is correct."
     exit 1
   fi
   AGENT_PARENT=$(dirname "$ADK_AGENT_PATH")
   cd "$AGENT_PARENT" || exit 1
-  exec adk web --port 8000
+  exec "$ADK_AGENT_PATH/.venv/bin/adk" web --port 8000
 }
 # Discover session files under ADK_AGENT_PATH: .session.json and *.session.json, newest first. Return 1 if none.
 discover_sessions() {
@@ -185,16 +195,26 @@ cmd_resume() {
       exit 1
     fi
   fi
-  # shellcheck source=/dev/null
-  source "$ADK_AGENT_PATH/.venv/bin/activate"
-  if ! command -v adk >/dev/null 2>&1; then
+  activate_venv || exit 1
+  if [[ ! -x "$ADK_AGENT_PATH/.venv/bin/adk" ]]; then
     echo "google-adk not found. Run 'init' and ensure venv is correct."
     exit 1
   fi
-  adk run --resume "$CHOSEN_FILE" "$ADK_AGENT_PATH"
+  "$ADK_AGENT_PATH/.venv/bin/adk" run --resume "$CHOSEN_FILE" "$ADK_AGENT_PATH"
 }
 cmd_create() {
-  local name parent agent_path
+  local name parent agent_path adk_bin
+  load_config
+  # Use current agent's venv for adk create if available
+  if [[ -n "${ADK_AGENT_PATH:-}" && -x "$ADK_AGENT_PATH/.venv/bin/adk" ]]; then
+    activate_venv
+    adk_bin="$ADK_AGENT_PATH/.venv/bin/adk"
+  elif command -v adk >/dev/null 2>&1; then
+    adk_bin=adk
+  else
+    echo "No adk in PATH and no agent venv set. Use 'path' to set an agent, run 'init', then create; or install google-adk (pip install google-adk)."
+    exit 1
+  fi
   read -r -p "Agent name (directory to create): " name
   name="${name%"${name##*[![:space:]]}"}"
   name="${name#"${name%%[![:space:]]*}"}"
@@ -208,7 +228,7 @@ cmd_create() {
   if [[ -z "$parent" ]]; then
     parent=$(pwd)
   fi
-  (cd "$parent" && adk create "$name") || exit 1
+  (cd "$parent" && "$adk_bin" create "$name") || exit 1
   agent_path="$parent/$name"
   echo "Created. Set path and run init? Set ADK_AGENT_PATH to $agent_path and run init, or use 'path' to set and then 'init'."
   read -r -p "Set ADK_AGENT_PATH to $agent_path now? [y/N] " reply
