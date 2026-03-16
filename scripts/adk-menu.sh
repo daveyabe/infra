@@ -67,7 +67,20 @@ cmd_path() {
   fi
 }
 
-cmd_init() { echo "Not implemented: init"; }
+cmd_init() {
+  ensure_path || exit 1
+  if [[ ! -d "$ADK_AGENT_PATH" ]]; then
+    echo "Agent path does not exist. Create with 'adk create <name>' (use subcommand 'create') or set path to an existing agent."
+    exit 1
+  fi
+  if [[ -d "$ADK_AGENT_PATH/.venv" ]]; then
+    "$ADK_AGENT_PATH/.venv/bin/pip" install google-adk
+  else
+    python3 -m venv "$ADK_AGENT_PATH/.venv"
+    "$ADK_AGENT_PATH/.venv/bin/pip" install google-adk
+  fi
+  echo "Init done. Venv at $ADK_AGENT_PATH/.venv"
+}
 cmd_run()  { echo "Not implemented: run"; }
 cmd_web()  { echo "Not implemented: web"; }
 cmd_resume() { echo "Not implemented: resume"; }
