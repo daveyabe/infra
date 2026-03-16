@@ -81,9 +81,106 @@ cmd_init() {
   fi
   echo "Init done. Venv at $ADK_AGENT_PATH/.venv"
 }
-cmd_run()  { echo "Not implemented: run"; }
-cmd_web()  { echo "Not implemented: web"; }
-cmd_resume() { echo "Not implemented: resume"; }
+cmd_run() {
+  ensure_path || exit 1
+  if [[ ! -d "$ADK_AGENT_PATH" ]]; then
+    echo "Agent path does not exist: $ADK_AGENT_PATH"
+    exit 1
+  fi
+  if [[ ! -f "$ADK_AGENT_PATH/.venv/bin/activate" ]]; then
+    echo "No .venv at $ADK_AGENT_PATH/.venv. Run 'init' first."
+    exit 1
+  fi
+  # shellcheck source=/dev/null
+  source "$ADK_AGENT_PATH/.venv/bin/activate"
+  adk run "$ADK_AGENT_PATH"
+}
+cmd_web() {
+  ensure_path || exit 1
+  if [[ ! -d "$ADK_AGENT_PATH" ]]; then
+    echo "Agent path does not exist: $ADK_AGENT_PATH"
+    exit 1
+  fi
+  if [[ ! -f "$ADK_AGENT_PATH/.venv/bin/activate" ]]; then
+    echo "No .venv at $ADK_AGENT_PATH/.venv. Run 'init' first."
+    exit 1
+  fi
+  # shellcheck source=/dev/null
+  source "$ADK_AGENT_PATH/.venv/bin/activate"
+  AGENT_PARENT=$(dirname "$ADK_AGENT_PATH")
+  cd "$AGENT_PARENT" || exit 1
+  exec adk web --port 8000
+}
+# Discover session files under ADK_AGENT_PATH: .session.json and *.session.json, newest first. Return 1 if none.
+discover_sessions() {
+  local sessions=()
+  if [[ -f "$ADK_AGENT_PATH/.session.json" ]]; then
+    sessions+=("$ADK_AGENT_PATH/.session.json")
+  fi
+  local f
+  for f in "$ADK_AGENT_PATH"/*.session.json; do
+    [[ -e "$f" ]] && sessions+=("$f")
+  done
+  if ((${#sessions[@]} == 0)); then
+    echo "No .session.json or *.session.json found under $ADK_AGENT_PATH."
+    return 1
+  fi
+  # Sort by mtime newest first
+  SESSION_FILES=()
+  while IFS= read -r line; do
+    SESSION_FILES+=("$line")
+  done < <(ls -td "${sessions[@]}" 2>/dev/null)
+  return 0
+}
+
+cmd_resume() {
+  ensure_path || exit 1
+  if [[ ! -d "$ADK_AGENT_PATH" ]]; then
+    echo "Agent path does not exist: $ADK_AGENT_PATH"
+    exit 1
+  fi
+  if [[ ! -f "$ADK_AGENT_PATH/.venv/bin/activate" ]]; then
+    echo "No .venv at $ADK_AGENT_PATH/.venv. Run 'init' first."
+    exit 1
+  fi
+  discover_sessions || exit 1
+  local i=1 chosen path_reply
+  for path_reply in "${SESSION_FILES[@]}"; do
+    echo "  ($i) $path_reply"
+    ((i++)) || true
+  done
+  read -r -p "Choose number or path: " reply
+  reply="${reply%"${reply##*[![:space:]]}"}"
+  reply="${reply#"${reply%%[![:space:]]*}"}"
+  if [[ -z "$reply" ]]; then
+    echo "No choice."
+    exit 1
+  fi
+  if [[ "$reply" =~ ^[0-9]+$ ]]; then
+    if (( reply >= 1 && reply <= ${#SESSION_FILES[@]} )); then
+      CHOSEN_FILE="${SESSION_FILES[reply-1]}"
+    else
+      echo "Invalid number."
+      exit 1
+    fi
+  else
+    # Allow full path or basename
+    CHOSEN_FILE=""
+    for path_reply in "${SESSION_FILES[@]}"; do
+      if [[ "$path_reply" == "$reply" || $(basename "$path_reply") == "$reply" ]]; then
+        CHOSEN_FILE="$path_reply"
+        break
+      fi
+    done
+    if [[ -z "$CHOSEN_FILE" ]]; then
+      echo "Not found: $reply"
+      exit 1
+    fi
+  fi
+  # shellcheck source=/dev/null
+  source "$ADK_AGENT_PATH/.venv/bin/activate"
+  adk run --resume "$CHOSEN_FILE" "$ADK_AGENT_PATH"
+}
 cmd_create() { echo "Not implemented: create"; }
 menu_loop() { echo "Not implemented: menu"; }
 
