@@ -36,12 +36,42 @@ load_config() {
   export ADK_AGENT_PATH
 }
 
+# Ensure ADK_AGENT_PATH is set. Print message and return 1 if not. Used by init, run, web, resume.
+ensure_path() {
+  load_config
+  if [[ -z "${ADK_AGENT_PATH:-}" ]]; then
+    echo "ADK_AGENT_PATH not set. Use 'path' or set ADK_AGENT_PATH."
+    return 1
+  fi
+  return 0
+}
+
+# Path subcommand: show path; when PATH_INTERACTIVE=1 (from menu) and path unset, prompt to set and optionally save.
+cmd_path() {
+  load_config
+  echo "ADK_AGENT_PATH=${ADK_AGENT_PATH:-<not set>}"
+  if [[ -z "${ADK_AGENT_PATH:-}" && "${PATH_INTERACTIVE:-0}" = "1" ]]; then
+    read -r -p "Set path? [y/N] " reply
+    if [[ "$reply" =~ ^[yY] ]]; then
+      read -r -p "Path: " ADK_AGENT_PATH
+      ADK_AGENT_PATH="${ADK_AGENT_PATH%"${ADK_AGENT_PATH##*[![:space:]]}"}"
+      ADK_AGENT_PATH="${ADK_AGENT_PATH#"${ADK_AGENT_PATH%%[![:space:]]*}"}"
+      if [[ -n "$ADK_AGENT_PATH" ]]; then
+        export ADK_AGENT_PATH
+        read -r -p "Save to config? [y/N] " reply2
+        if [[ "$reply2" =~ ^[yY] ]]; then
+          echo "ADK_AGENT_PATH=$ADK_AGENT_PATH" > ~/.adk-menu.conf
+        fi
+      fi
+    fi
+  fi
+}
+
 cmd_init() { echo "Not implemented: init"; }
 cmd_run()  { echo "Not implemented: run"; }
 cmd_web()  { echo "Not implemented: web"; }
 cmd_resume() { echo "Not implemented: resume"; }
 cmd_create() { echo "Not implemented: create"; }
-cmd_path() { echo "Not implemented: path"; }
 menu_loop() { echo "Not implemented: menu"; }
 
 subcommand="${1:-menu}"
