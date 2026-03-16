@@ -181,7 +181,33 @@ cmd_resume() {
   source "$ADK_AGENT_PATH/.venv/bin/activate"
   adk run --resume "$CHOSEN_FILE" "$ADK_AGENT_PATH"
 }
-cmd_create() { echo "Not implemented: create"; }
+cmd_create() {
+  local name parent agent_path
+  read -r -p "Agent name (directory to create): " name
+  name="${name%"${name##*[![:space:]]}"}"
+  name="${name#"${name%%[![:space:]]*}"}"
+  if [[ -z "$name" ]]; then
+    echo "Agent name cannot be empty."
+    exit 1
+  fi
+  read -r -p "Parent directory [$(pwd)]: " parent
+  parent="${parent%"${parent##*[![:space:]]}"}"
+  parent="${parent#"${parent%%[![:space:]]*}"}"
+  if [[ -z "$parent" ]]; then
+    parent=$(pwd)
+  fi
+  (cd "$parent" && adk create "$name") || exit 1
+  agent_path="$parent/$name"
+  echo "Created. Set path and run init? Set ADK_AGENT_PATH to $agent_path and run init, or use 'path' to set and then 'init'."
+  read -r -p "Set ADK_AGENT_PATH to $agent_path now? [y/N] " reply
+  if [[ "$reply" =~ ^[yY] ]]; then
+    export ADK_AGENT_PATH="$agent_path"
+    read -r -p "Run init now? [y/N] " reply2
+    if [[ "$reply2" =~ ^[yY] ]]; then
+      cmd_init
+    fi
+  fi
+}
 menu_loop() { echo "Not implemented: menu"; }
 
 subcommand="${1:-menu}"
