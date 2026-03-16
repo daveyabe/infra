@@ -208,7 +208,77 @@ cmd_create() {
     fi
   fi
 }
-menu_loop() { echo "Not implemented: menu"; }
+menu_loop() {
+  local choice
+  while true; do
+    load_config
+    echo ""
+    echo "ADK Menu (agent: ${ADK_AGENT_PATH:-<not set>})"
+    echo "  1) Init venv + pip install google-adk"
+    echo "  2) Run session (CLI)"
+    echo "  3) Run session (Web UI)"
+    echo "  4) Resume session (choose from saved)"
+    echo "  5) Create new agent"
+    echo "  6) Set / show agent path"
+    echo "  7) Exit"
+    read -r -p "Choice: " choice
+    choice="${choice%"${choice##*[![:space:]]}"}"
+    choice="${choice#"${choice%%[![:space:]]*}"}"
+    case "$choice" in
+      1)
+        if ! ensure_path; then
+          PATH_INTERACTIVE=1 cmd_path
+          if ! ensure_path; then
+            echo "Set agent path first (option 6)."
+          else
+            cmd_init
+          fi
+        else
+          cmd_init
+        fi
+        read -r -p "Press Enter to continue..."
+        ;;
+      2)
+        if ! ensure_path; then
+          echo "Set agent path first (option 6)."
+        else
+          cmd_run
+        fi
+        read -r -p "Press Enter to continue..."
+        ;;
+      3)
+        if ! ensure_path; then
+          echo "Set agent path first (option 6)."
+        else
+          cmd_web
+        fi
+        read -r -p "Press Enter to continue..."
+        ;;
+      4)
+        if ! ensure_path; then
+          echo "Set agent path first (option 6)."
+        else
+          cmd_resume
+        fi
+        read -r -p "Press Enter to continue..."
+        ;;
+      5)
+        cmd_create
+        read -r -p "Press Enter to continue..."
+        ;;
+      6)
+        PATH_INTERACTIVE=1 cmd_path
+        read -r -p "Press Enter to continue..."
+        ;;
+      7)
+        exit 0
+        ;;
+      *)
+        echo "Invalid choice."
+        ;;
+    esac
+  done
+}
 
 subcommand="${1:-menu}"
 case "$subcommand" in
