@@ -93,6 +93,10 @@ cmd_run() {
   fi
   # shellcheck source=/dev/null
   source "$ADK_AGENT_PATH/.venv/bin/activate"
+  if ! command -v adk >/dev/null 2>&1; then
+    echo "google-adk not found. Run 'init' and ensure venv is correct."
+    exit 1
+  fi
   adk run "$ADK_AGENT_PATH"
 }
 cmd_web() {
@@ -107,6 +111,10 @@ cmd_web() {
   fi
   # shellcheck source=/dev/null
   source "$ADK_AGENT_PATH/.venv/bin/activate"
+  if ! command -v adk >/dev/null 2>&1; then
+    echo "google-adk not found. Run 'init' and ensure venv is correct."
+    exit 1
+  fi
   AGENT_PARENT=$(dirname "$ADK_AGENT_PATH")
   cd "$AGENT_PARENT" || exit 1
   exec adk web --port 8000
@@ -179,6 +187,10 @@ cmd_resume() {
   fi
   # shellcheck source=/dev/null
   source "$ADK_AGENT_PATH/.venv/bin/activate"
+  if ! command -v adk >/dev/null 2>&1; then
+    echo "google-adk not found. Run 'init' and ensure venv is correct."
+    exit 1
+  fi
   adk run --resume "$CHOSEN_FILE" "$ADK_AGENT_PATH"
 }
 cmd_create() {
