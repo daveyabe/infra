@@ -4,6 +4,91 @@
 
 Bash script for managing [Google ADK](https://github.com/google/adk) agents: init venv, run CLI or web UI, resume sessions, create agents, and manage agent path.
 
+### Docker
+
+A Dockerfile is provided to run the menu script in a containerised environment (Ubuntu 24.04 with Python 3, venv support, and `gcloud` CLI).
+
+```bash
+# Build
+docker build -t adk-menu .
+
+# Interactive menu
+docker run -it adk-menu
+
+# Run a specific command
+docker run adk-menu init
+docker run adk-menu help
+
+# Override entrypoint for debugging
+docker run -it --entrypoint bash adk-menu
+```
+
+When running commands that need an agent directory, mount it into the container and set `ADK_AGENT_PATH`:
+
+```bash
+docker run -it -v /path/to/my_agent:/agent -e ADK_AGENT_PATH=/agent adk-menu init
+```
+
+For the web UI, expose the port:
+
+```bash
+docker run -it -v /path/to/my_agent:/agent -e ADK_AGENT_PATH=/agent -p 8000:8000 adk-menu web
+```
+
+#### Authentication (GCP / Vertex AI)
+
+The container includes `gcloud` CLI for setting up Application Default Credentials (ADC). There are two approaches:
+
+**Option 1 — Authenticate inside the container:**
+
+```bash
+docker run -it --entrypoint bash adk-menu
+# then inside the container:
+gcloud auth application-default login
+```
+
+**Option 2 — Mount existing host credentials:**
+
+If you've already authenticated on your host machine, mount your `gcloud` config directory:
+
+```bash
+docker run -it \
+  -v ~/.config/gcloud:/root/.config/gcloud \
+  -v /path/to/my_agent:/agent \
+  -e ADK_AGENT_PATH=/agent \
+  adk-menu
+```
+
+**Option 3 — Service account key:**
+
+Mount a service account key JSON and set `GOOGLE_APPLICATION_CREDENTIALS`:
+
+```bash
+docker run -it \
+  -v /path/to/service-account.json:/secrets/sa.json:ro \
+  -e GOOGLE_APPLICATION_CREDENTIALS=/secrets/sa.json \
+  -v /path/to/my_agent:/agent \
+  -e ADK_AGENT_PATH=/agent \
+  adk-menu
+```
+
+#### Available commands
+
+Passed as the first argument to the container:
+
+| Command | Description |
+|---------|-------------|
+| *(none)* | Interactive menu |
+| `init` | Create `.venv` in agent dir and `pip install google-adk` |
+| `run` | Activate venv and run `adk run` (CLI) |
+| `web` | Activate venv and run `adk web` (port: `ADK_WEB_PORT`, default 8000) |
+| `resume` | Discover `*.session.json` / `.session.json`, choose one, resume session |
+| `create` | Prompt for agent name and parent dir, run `adk create` |
+| `path` | Show current `ADK_AGENT_PATH` |
+| `deploy` | Deploy agent to Vertex AI Agent Engine |
+| `query-vertex` | List deployed Agent Engines, select one, interactive query loop |
+| `help` | Print usage |
+
 ### Config: ADK_AGENT_PATH
 
 Agent path is resolved in this order:
@@ -14,7 +99,7 @@ Agent path is resolved in this order:
 
 Config file format: one line `ADK_AGENT_PATH=/path/to/agent`; optional `ADK_WEB_PORT=8000` (default 8000). Comments (`#`) and blank lines are ignored; leading/trailing whitespace is stripped. If port 8000 is already in use, set `ADK_WEB_PORT=8001` (or another port) in `~/.adk-menu.conf` or in the environment.
 
-**Important:** `ADK_AGENT_PATH` must point at a **single agent folder** (the one that contains `agent.py` or `root_agent.yaml`), e.g. the directory created by `adk create my_agent`. Do not point it at the repo’s `scripts/` directory (where this menu script lives) or at a parent that contains multiple agents.
+**Important:** `ADK_AGENT_PATH` must point at a **single agent folder** (the one that contains `agent.py` or `root_agent.yaml`), e.g. the directory created by `adk create my_agent`. Do not point it at the repo's `scripts/` directory (where this menu script lives) or at a parent that contains multiple agents.
 
 ### Vertex AI authentication
 
@@ -24,7 +109,7 @@ When your agent uses Vertex AI (e.g. `.env` has `GOOGLE_GENAI_USE_VERTEXAI=1`), 
 gcloud auth application-default login
 ```
 
-From the interactive menu, you’ll be prompted to run that command. Alternatively, set `GOOGLE_APPLICATION_CREDENTIALS` to a service account key JSON path.
+From the interactive menu, you'll be prompted to run that command. Alternatively, set `GOOGLE_APPLICATION_CREDENTIALS` to a service account key JSON path.
 
 ### Subcommands
 
@@ -33,7 +118,7 @@ From the interactive menu, you’ll be prompted to run that command. Alternative
 | (none) | Interactive menu |
 | `init` | Create `.venv` in agent dir and `pip install google-adk` |
 | `run` | Activate venv and run `adk run` (CLI) |
-| `web` | Activate venv and run `adk web` from agent’s parent dir (port: `ADK_WEB_PORT`, default 8000) |
+| `web` | Activate venv and run `adk web` from agent's parent dir (port: `ADK_WEB_PORT`, default 8000) |
 | `resume` | Discover `*.session.json` / `.session.json`, choose one, run `adk run --resume` |
 | `create` | Prompt for agent name and parent dir, run `adk create`, offer to set path and init |
 | `path` | Show current path; when run from menu, prompt to set and optionally save to config |
@@ -46,12 +131,12 @@ From the interactive menu, you’ll be prompted to run that command. Alternative
 The `deploy` subcommand (menu option 7) runs `adk deploy agent_engine` for the current agent. You need:
 
 - **GCP auth:** `gcloud auth application-default login` (or `GOOGLE_APPLICATION_CREDENTIALS`)
-- **Project and region:** If your agent has a `.env` with `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION`, those are used; otherwise you’re prompted.
+- **Project and region:** If your agent has a `.env` with `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION`, those are used; otherwise you're prompted.
 - **Display name:** Defaults to the agent folder name; you can override when prompted.
-- **Staging bucket:** A GCS bucket (e.g. `gs://your-bucket`) is **required**. Set `ADK_DEPLOY_STAGING_BUCKET=gs://your-bucket` in `~/.adk-menu.conf` or in the agent’s `.env`, or you’ll be prompted. Create a bucket with: `gsutil mb -p PROJECT -l REGION gs://YOUR-BUCKET-NAME`.
-- **Payload size:** The menu deploys from a **minimal copy** of your agent (excluding `.venv`, `__pycache__`, `.adk`, `.git`, `*.session.json`) so the request stays under Vertex’s 8MB limit. A `requirements.txt` is added from your venv if missing.
+- **Staging bucket:** A GCS bucket (e.g. `gs://your-bucket`) is **required**. Set `ADK_DEPLOY_STAGING_BUCKET=gs://your-bucket` in `~/.adk-menu.conf` or in the agent's `.env`, or you'll be prompted. Create a bucket with: `gsutil mb -p PROJECT -l REGION gs://YOUR-BUCKET-NAME`.
+- **Payload size:** The menu deploys from a **minimal copy** of your agent (excluding `.venv`, `__pycache__`, `.adk`, `.git`, `*.session.json`) so the request stays under Vertex's 8MB limit. A `requirements.txt` is added from your venv if missing.
 
-The script uses the ADK CLI to package the agent, build a container, and deploy to the managed Agent Engine service. Enable the Vertex AI API and Cloud Resource Manager API in your project first. After a successful deploy, you’re prompted **Query the deployed agent now? [y/N]**; if you choose yes, an interactive loop lets you send messages to the deployed agent and see streamed responses.
+The script uses the ADK CLI to package the agent, build a container, and deploy to the managed Agent Engine service. Enable the Vertex AI API and Cloud Resource Manager API in your project first. After a successful deploy, you're prompted **Query the deployed agent now? [y/N]**; if you choose yes, an interactive loop lets you send messages to the deployed agent and see streamed responses.
 
 ### Usage
 
