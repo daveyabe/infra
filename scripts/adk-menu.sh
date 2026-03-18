@@ -79,6 +79,37 @@ agent_uses_vertex() {
   [[ -f "$ADK_AGENT_PATH/.env" ]] && grep -q 'GOOGLE_GENAI_USE_VERTEXAI=1' "$ADK_AGENT_PATH/.env" 2>/dev/null
 }
 
+# Ensure GOOGLE_API_KEY (Gemini / AI Studio) is available via env or agent .env. Prompt if missing.
+ensure_api_key() {
+  if [[ -n "${GOOGLE_API_KEY:-}" ]]; then
+    return 0
+  fi
+  local key_from_env
+  key_from_env=$(read_agent_env GOOGLE_API_KEY)
+  if [[ -n "$key_from_env" ]]; then
+    export GOOGLE_API_KEY="$key_from_env"
+    return 0
+  fi
+  echo "GOOGLE_API_KEY not found (needed for Gemini / AI Studio)."
+  echo "Get one at: https://aistudio.google.com/apikey"
+  read -r -p "Enter API key (or leave empty to skip): " reply
+  reply="${reply%"${reply##*[![:space:]]}"}"
+  reply="${reply#"${reply%%[![:space:]]*}"}"
+  if [[ -z "$reply" ]]; then
+    echo "No API key set. adk may fail without it."
+    return 1
+  fi
+  export GOOGLE_API_KEY="$reply"
+  if [[ -n "${ADK_AGENT_PATH:-}" ]]; then
+    read -r -p "Save to $ADK_AGENT_PATH/.env? [Y/n] " save_reply
+    if [[ ! "$save_reply" =~ ^[nN] ]]; then
+      echo "GOOGLE_API_KEY=$reply" >> "$ADK_AGENT_PATH/.env"
+      echo "Saved to .env."
+    fi
+  fi
+  return 0
+}
+
 # Ensure Google Cloud / Vertex AI credentials are available. Exit 1 with message if not.
 # When AUTH_INTERACTIVE=1 (e.g. from menu), offer to run gcloud auth application-default login.
 ensure_gcp_auth() {
@@ -163,6 +194,8 @@ cmd_run() {
   ensure_agent_dir
   if agent_uses_vertex; then
     ensure_gcp_auth || exit 1
+  else
+    ensure_api_key
   fi
   "$ADK_AGENT_PATH/.venv/bin/adk" run "$ADK_AGENT_PATH"
 }
@@ -184,6 +217,8 @@ cmd_web() {
   ensure_agent_dir
   if agent_uses_vertex; then
     ensure_gcp_auth || exit 1
+  else
+    ensure_api_key
   fi
   AGENT_PARENT=$(dirname "$ADK_AGENT_PATH")
   cd "$AGENT_PARENT" || exit 1
@@ -252,6 +287,8 @@ cmd_resume() {
   ensure_agent_dir
   if agent_uses_vertex; then
     ensure_gcp_auth || exit 1
+  else
+    ensure_api_key
   fi
   discover_sessions || exit 1
   local i=1 chosen path_reply
@@ -423,6 +460,19 @@ cmd_deploy() {
       *) cp -R "$f" "$tmp_deploy/" 2>/dev/null || true ;;
     esac
   done
+  # Rewrite .env for Vertex: remove GOOGLE_API_KEY (conflicts with project auth) and ensure Vertex AI is enabled.
+  if [[ -f "$tmp_deploy/.env" ]]; then
+    grep -v '^GOOGLE_API_KEY=' "$tmp_deploy/.env" > "$tmp_deploy/.env.tmp" && mv "$tmp_deploy/.env.tmp" "$tmp_deploy/.env"
+  fi
+  if ! grep -q '^GOOGLE_GENAI_USE_VERTEXAI=' "$tmp_deploy/.env" 2>/dev/null; then
+    echo "GOOGLE_GENAI_USE_VERTEXAI=TRUE" >> "$tmp_deploy/.env"
+  fi
+  if ! grep -q '^GOOGLE_CLOUD_PROJECT=' "$tmp_deploy/.env" 2>/dev/null; then
+    echo "GOOGLE_CLOUD_PROJECT=$project" >> "$tmp_deploy/.env"
+  fi
+  if ! grep -q '^GOOGLE_CLOUD_LOCATION=' "$tmp_deploy/.env" 2>/dev/null; then
+    echo "GOOGLE_CLOUD_LOCATION=$region" >> "$tmp_deploy/.env"
+  fi
   # Ensure requirements.txt exists (ADK may generate, but some versions expect it)
   if [[ ! -f "$tmp_deploy/requirements.txt" ]]; then
     "$ADK_AGENT_PATH/.venv/bin/pip" freeze > "$tmp_deploy/requirements.txt" 2>/dev/null || echo "google-adk" > "$tmp_deploy/requirements.txt"
