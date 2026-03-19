@@ -1,0 +1,5 @@
+streamlit>=1.30,<2
+notion-client>=3.0,<4
+deepdiff>=7.0,<8
+python-dotenv>=1.0,<2
+watchdog>=6.0,<7

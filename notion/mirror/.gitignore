@@ -1,0 +1,4 @@
+.env
+.venv/
+mirror.db
+__pycache__/
