@@ -1,0 +1,168 @@
+# Reusable Deploy Workflow
+#
+# This workflow is designed to be called from other repositories to deploy
+# Cloud Run services and Artifact Registries using Terraform.
+#
+# Usage from caller repo:
+#   jobs:
+#     deploy:
+#       uses: N43-Studio/infrastructure/.github/workflows/deploy-service.yml@main
+#       with:
+#         project: my-app
+#         environment: dev
+#         action: apply
+#         image_tag: ${{ github.sha }}
+#       secrets: inherit
+#
+# Prerequisites:
+#   1. The project must exist in terraform/projects/{project}/{env}/ (use scaffold-project.sh)
+#   2. The caller repo must be authorized via WIF (use allow-caller-repo.sh)
+#   3. Caller repo needs GCP_PROJECT_ID and GCP_PROJECT_NUMBER secrets
+#
+# See terraform/README.md for full onboarding documentation.
+
+name: Deploy Service
+
+on:
+  workflow_call:
+    inputs:
+      project:
+        description: 'Project name (must exist under terraform/projects/)'
+        required: true
+        type: string
+      environment:
+        description: 'Environment (e.g. dev, staging, prod)'
+        required: true
+        type: string
+      action:
+        description: 'Terraform action to perform'
+        required: true
+        type: string
+        default: 'plan'
+      image_tag:
+        description: 'Container image tag to deploy (passed as -var to Terraform)'
+        required: false
+        type: string
+        default: 'latest'
+    outputs:
+      service_url:
+        description: 'Cloud Run service URL'
+        value: ${{ jobs.deploy.outputs.service_url }}
+      registry_url:
+        description: 'Artifact Registry URL'
+        value: ${{ jobs.deploy.outputs.registry_url }}
+    secrets:
+      GCP_PROJECT_ID:
+        required: true
+      GCP_PROJECT_NUMBER:
+        required: true
+
+env:
+  TF_VERSION: '1.7.0'
+  WORKLOAD_IDENTITY_PROVIDER: 'projects/${{ secrets.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+  SERVICE_ACCOUNT: 'terraform-github-actions@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    outputs:
+      service_url: ${{ steps.outputs.outputs.service_url }}
+      registry_url: ${{ steps.outputs.outputs.registry_url }}
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout infrastructure repo
+        uses: actions/checkout@v4
+        with:
+          repository: N43-Studio/infrastructure
+          ref: main
+
+      - name: Validate project and environment
+        run: |
+          PROJECT="${{ inputs.project }}"
+          ENV="${{ inputs.environment }}"
+          ROOT="terraform/projects"
+          DIR="$ROOT/$PROJECT/$ENV"
+
+          echo "=== Deploy Service Workflow ==="
+          echo "Project:     $PROJECT"
+          echo "Environment: $ENV"
+          echo "Action:      ${{ inputs.action }}"
+          echo "Image tag:   ${{ inputs.image_tag }}"
+          echo ""
+
+          if [[ ! -d "$DIR" ]]; then
+            echo "::error::Directory does not exist: $DIR"
+            echo ""
+            echo "Available project/environment combinations:"
+            for p in "$ROOT"/*/; do
+              [ -d "$p" ] || continue
+              pname=$(basename "$p")
+              for e in "$p"*/; do
+                [ -d "$e" ] || continue
+                if ls "$e"/*.tf 1>/dev/null 2>&1; then
+                  ename=$(basename "$e")
+                  echo "  - $pname / $ename"
+                fi
+              done
+            done
+            exit 1
+          fi
+
+          if ! ls "$DIR"/*.tf 1>/dev/null 2>&1; then
+            echo "::error::No .tf files in $DIR (not a Terraform project root)"
+            exit 1
+          fi
+
+          echo "Validated: $DIR exists and contains Terraform files"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.SERVICE_ACCOUNT }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        working-directory: terraform/projects/${{ inputs.project }}/${{ inputs.environment }}
+        run: terraform init
+
+      - name: Terraform Plan
+        if: inputs.action == 'plan'
+        working-directory: terraform/projects/${{ inputs.project }}/${{ inputs.environment }}
+        run: |
+          terraform plan \
+            -var="${{ inputs.project }}_image_tag=${{ inputs.image_tag }}"
+
+      - name: Terraform Apply
+        if: inputs.action == 'apply'
+        working-directory: terraform/projects/${{ inputs.project }}/${{ inputs.environment }}
+        run: |
+          terraform apply -auto-approve \
+            -var="${{ inputs.project }}_image_tag=${{ inputs.image_tag }}"
+
+      - name: Capture outputs
+        id: outputs
+        working-directory: terraform/projects/${{ inputs.project }}/${{ inputs.environment }}
+        run: |
+          # Extract outputs - these names follow the convention in our project templates
+          SERVICE_URL=$(terraform output -raw ${{ inputs.project }}_service_url 2>/dev/null || echo "")
+          REGISTRY_URL=$(terraform output -raw artifact_registry_repository_url 2>/dev/null || echo "")
+
+          echo "service_url=$SERVICE_URL" >> $GITHUB_OUTPUT
+          echo "registry_url=$REGISTRY_URL" >> $GITHUB_OUTPUT
+
+          if [[ -n "$SERVICE_URL" ]]; then
+            echo "Service URL: $SERVICE_URL"
+          fi
+          if [[ -n "$REGISTRY_URL" ]]; then
+            echo "Registry URL: $REGISTRY_URL"
+          fi

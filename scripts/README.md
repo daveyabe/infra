@@ -1,5 +1,48 @@
 # Scripts
 
+## scaffold-project.sh
+
+Generates a new Terraform project root for Cloud Run + Artifact Registry deployment.
+
+```bash
+# Create a new project
+./scripts/scaffold-project.sh my-app dev
+
+# With custom GCP project
+./scripts/scaffold-project.sh my-app prod --gcp-project-id my-prod-project
+```
+
+Creates `terraform/projects/{name}/{env}/` with:
+- `main.tf` — Artifact Registry + Cloud Run modules
+- `variables.tf` — Project-specific variables
+- `outputs.tf` — Registry URL and service URL
+- `providers.tf` — Google provider config
+- `backend.tf` — GCS remote state
+- `terraform.tfvars.example` — Example variable values
+
+See [terraform/README.md](../terraform/README.md) for the full cross-repo deployment workflow.
+
+---
+
+## allow-caller-repo.sh
+
+Authorizes a GitHub repository to use the reusable deploy workflow via Workload Identity Federation.
+
+```bash
+# Authorize a repo
+./scripts/allow-caller-repo.sh N43-Studio my-app
+
+# Dry run (show what would happen)
+./scripts/allow-caller-repo.sh N43-Studio my-app --dry-run
+
+# With custom GCP project
+./scripts/allow-caller-repo.sh N43-Studio my-app --gcp-project-id my-project
+```
+
+This adds an IAM binding allowing the specified repo to impersonate the Terraform service account. Run this after scaffolding a project and before the caller repo can deploy.
+
+---
+
 ## adk-menu.sh
 
 Bash script for managing [Google ADK](https://github.com/google/adk) agents: init venv, run CLI or web UI, resume sessions, create agents, and manage agent path.

@@ -106,6 +106,119 @@ module "vpc" {
 }
 ```
 
+## Cross-Repo Deployment (Reusable Workflow)
+
+External repositories can deploy Cloud Run services by calling the reusable workflow in this repo. This centralizes Terraform configuration and state while allowing each app repo to trigger its own deployments.
+
+### How It Works
+
+```
+┌─────────────────────┐     workflow_call     ┌──────────────────────────────────┐
+│   Caller Repo CI    │ ─────────────────────>│ infrastructure/deploy-service.yml│
+│  (builds image,     │   project, env,       │  (checks out this repo,          │
+│   pushes to AR)     │   image_tag, action   │   runs terraform plan/apply)     │
+└─────────────────────┘                       └──────────────────────────────────┘
+```
+
+1. **Caller repo** builds and pushes a Docker image to Artifact Registry
+2. **Caller repo** calls the reusable workflow with the image tag
+3. **Reusable workflow** checks out this infrastructure repo
+4. **Reusable workflow** runs Terraform with the new image tag
+5. **Cloud Run** deploys the new image
+
+### One-Time Onboarding (New Project)
+
+1. **Scaffold the project** (creates Terraform files):
+   ```bash
+   ./scripts/scaffold-project.sh my-app dev
+   ```
+
+2. **Review and customize** the generated files in `terraform/projects/my-app/dev/`
+
+3. **Create a PR** to this infrastructure repo and get it merged
+
+4. **Apply the initial Terraform** (creates Artifact Registry + Cloud Run):
+   ```bash
+   cd terraform/projects/my-app/dev
+   terraform init
+   terraform apply -var="gcp_project_id=YOUR_PROJECT"
+   ```
+
+5. **Authorize the caller repo** to use the reusable workflow:
+   ```bash
+   ./scripts/allow-caller-repo.sh N43-Studio my-app
+   ```
+
+6. **Add secrets** to the caller repo (or use org-level secrets):
+   - `GCP_PROJECT_ID`: Your GCP project ID
+   - `GCP_PROJECT_NUMBER`: Your GCP project number
+
+### Caller Workflow Example
+
+In your application repo, create `.github/workflows/deploy.yml`:
+
+```yaml
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/${{ secrets.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+          service_account: terraform-github-actions@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+      
+      - name: Configure Docker
+        run: gcloud auth configure-docker northamerica-northeast2-docker.pkg.dev
+      
+      - name: Build and push
+        id: meta
+        run: |
+          IMAGE="northamerica-northeast2-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/my-app/my-app:${{ github.sha }}"
+          docker build -t $IMAGE .
+          docker push $IMAGE
+          echo "tags=${{ github.sha }}" >> $GITHUB_OUTPUT
+
+  deploy:
+    needs: build
+    uses: N43-Studio/infrastructure/.github/workflows/deploy-service.yml@main
+    with:
+      project: my-app
+      environment: dev
+      action: apply
+      image_tag: ${{ needs.build.outputs.image_tag }}
+    secrets: inherit
+```
+
+### What the Reusable Workflow Does (and Doesn't)
+
+**Does:**
+- Runs `terraform plan` or `terraform apply` for the specified project/environment
+- Passes the `image_tag` as a Terraform variable (`-var="project_image_tag=..."`)
+- Returns outputs: `service_url` and `registry_url`
+
+**Doesn't:**
+- Build Docker images (caller repo does this)
+- Push images to Artifact Registry (caller repo does this)
+- Create new project roots (use `scaffold-project.sh` for that)
+
+### Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/scaffold-project.sh` | Generate a new `terraform/projects/{name}/{env}/` root |
+| `scripts/allow-caller-repo.sh` | Authorize a repo to call the reusable workflow (WIF binding) |
+
 ## Best Practices
 
 - **State Management**: Each project/environment uses a separate state prefix in GCS (e.g., `riley/dev`, `halo/prod`)

@@ -1,3 +1,19 @@
+# Terraform CI/CD Workflow
+#
+# This workflow handles Terraform operations for projects defined in this repo.
+# It runs on:
+#   - Pull requests: terraform plan (commented on PR)
+#   - Push to main: terraform apply (for changed projects)
+#   - Manual dispatch: plan or apply for any project/environment
+#
+# Related workflow:
+#   - deploy-service.yml: Reusable workflow for external repos to deploy
+#     Cloud Run services. That workflow checks out THIS repo and runs
+#     Terraform against the same project roots. Use scaffold-project.sh
+#     to create new projects and allow-caller-repo.sh to authorize repos.
+#
+# See terraform/README.md for full documentation.
+
 name: Terraform
 
 on:
