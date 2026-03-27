@@ -278,7 +278,7 @@ st.sidebar.markdown("""
 
 page = st.sidebar.radio(
     "Navigate",
-    ["Explorer", "Page Viewer", "Stitched Mirror", "Mirror", "Diff", "API Metrics"],
+    ["Explorer", "Page Viewer", "Stitched Mirror", "Mirror", "Diff", "Import", "API Metrics"],
 )
 
 
@@ -781,6 +781,110 @@ def _render_diff():
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# Import
+# ═══════════════════════════════════════════════════════════════════════
+
+def _detect_snapshot_type(data: dict) -> str | None:
+    """Infer snapshot object_type from the shape of the JSON payload."""
+    if "schema" in data and "rows" in data:
+        if any("_blocks" in r for r in data.get("rows", [])):
+            return "stitched"
+        return "database"
+    if "page" in data and "blocks" in data:
+        return "page"
+    return None
+
+
+def _extract_notion_id(data: dict, object_type: str) -> str | None:
+    """Pull the original Notion ID from a snapshot payload, if present."""
+    if object_type in ("database", "stitched"):
+        return data.get("schema", {}).get("id")
+    if object_type == "page":
+        return data.get("page", {}).get("id")
+    return None
+
+
+def _render_import():
+    st.header("Import")
+    st.caption(
+        "Load external JSON backup files as snapshots. "
+        "Imported snapshots appear in **Mirror** and **Diff** like any other snapshot."
+    )
+
+    uploaded = st.file_uploader(
+        "Upload JSON files",
+        type=["json"],
+        accept_multiple_files=True,
+        key="import_uploader",
+    )
+
+    if not uploaded:
+        st.info("Upload one or more `.json` files exported from the Notion API or this app.")
+        return
+
+    type_override = st.selectbox(
+        "Object type",
+        ["auto-detect", "database", "page", "stitched"],
+        help="Auto-detect infers the type from the JSON structure.",
+    )
+
+    label_override = st.text_input(
+        "Label override",
+        placeholder="Leave blank to extract title from data",
+    )
+
+    if st.button("Import snapshots", key="do_import"):
+        imported = 0
+        for f in uploaded:
+            try:
+                data = json.loads(f.read())
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                st.error(f"**{f.name}**: invalid JSON — {exc}")
+                continue
+
+            if not isinstance(data, dict):
+                st.error(f"**{f.name}**: expected a JSON object at the top level")
+                continue
+
+            if type_override == "auto-detect":
+                obj_type = _detect_snapshot_type(data)
+                if obj_type is None:
+                    st.error(
+                        f"**{f.name}**: could not detect type. "
+                        "Select a type manually from the dropdown."
+                    )
+                    continue
+            else:
+                obj_type = type_override
+
+            notion_id = _extract_notion_id(data, obj_type) or f"imported-{f.name}"
+            label = label_override or _try_extract_label(data, obj_type) or f.name
+
+            sid = storage.save_snapshot(obj_type, notion_id, data, label=label)
+            st.success(f"**{f.name}** → snapshot #{sid} ({obj_type})")
+            imported += 1
+
+        if imported:
+            st.balloons()
+            st.info(f"Imported {imported} snapshot(s). View them in **Mirror** or compare in **Diff**.")
+
+
+def _try_extract_label(data: dict, obj_type: str) -> str | None:
+    """Best-effort title extraction from an imported payload."""
+    if obj_type in ("database", "stitched"):
+        if data.get("title"):
+            return data["title"]
+        schema = data.get("schema", {})
+        if schema:
+            return api.extract_title(schema)
+    if obj_type == "page":
+        page = data.get("page", {})
+        if page:
+            return api.extract_title(page)
+    return None
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # API Metrics
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -855,5 +959,7 @@ elif page == "Mirror":
     _render_mirror()
 elif page == "Diff":
     _render_diff()
+elif page == "Import":
+    _render_import()
 elif page == "API Metrics":
     _render_metrics()
