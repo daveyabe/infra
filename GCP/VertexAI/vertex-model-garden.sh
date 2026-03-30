@@ -181,9 +181,7 @@ litellm_is_running() {
 
 # --- Subcommand dispatch (at bottom of file) ---
 
-# cmd_list(), cmd_configs(), cmd_deploy(), cmd_status(), cmd_undeploy(),
-# cmd_generate_config(), show_banner(), menu_loop() are defined in subsequent tasks.
-# Stub them here so the script doesn't error:
+# show_banner() and menu_loop() follow adk-menu.sh conventions (interactive menu).
 
 cmd_list() {
   local filter="${1:-}"
@@ -610,8 +608,69 @@ JSONEOF
   echo "============================================================"
 }
 
-show_banner()         { echo "  Vertex AI Model Garden -- Gas Town"; echo ""; }
-menu_loop()           { echo "Not yet implemented. See Task 7."; }
+show_banner() {
+  echo ""
+  echo "  __     __        _              _    ___   __  __           _      _   "
+  echo "  \ \   / /__ _ __| |_ _____  __ / \  |_ _| |  \/  | ___  __| | ___| |  "
+  echo "   \ \ / / _ \ '__| __/ _ \ \/ // _ \  | |  | |\/| |/ _ \/ _\` |/ _ \ |  "
+  echo "    \ V /  __/ |  | ||  __/>  </ ___ \ | |  | |  | | (_) | (_| |  __/ |  "
+  echo "     \_/ \___|_|   \__\___/_/\_/_/   \_\___| |_|  |_|\___/ \__,_|\___|_|  "
+  echo "                         Gas Town Model Garden"
+  echo ""
+}
+
+menu_loop() {
+  local choice
+  while true; do
+    load_config
+    show_banner
+    echo "  Project: ${PROJECT:-<not set>}  Region: ${REGION:-us-central1}"
+    echo ""
+    echo "  1) List available models"
+    echo "  2) Show deployment configs for a model"
+    echo "  3) Deploy a model"
+    echo "  4) Show deployed endpoints (status)"
+    echo "  5) Undeploy a model"
+    echo "  6) Generate Gas Town + Cursor config"
+    echo "  7) Exit"
+    echo ""
+    read -r -p "  Choice: " choice
+    choice="${choice#"${choice%%[![:space:]]*}"}"
+    choice="${choice%"${choice##*[![:space:]]}"}"
+    case "$choice" in
+      1)
+        ensure_gcloud && ensure_project && cmd_list
+        read -r -p "Press Enter to continue..."
+        ;;
+      2)
+        ensure_gcloud && ensure_project && cmd_configs
+        read -r -p "Press Enter to continue..."
+        ;;
+      3)
+        ensure_gcloud && ensure_project && ensure_region && ensure_apis && cmd_deploy
+        read -r -p "Press Enter to continue..."
+        ;;
+      4)
+        ensure_gcloud && ensure_project && ensure_region && cmd_status
+        read -r -p "Press Enter to continue..."
+        ;;
+      5)
+        ensure_gcloud && ensure_project && ensure_region && cmd_undeploy
+        read -r -p "Press Enter to continue..."
+        ;;
+      6)
+        cmd_generate_config
+        read -r -p "Press Enter to continue..."
+        ;;
+      7)
+        exit 0
+        ;;
+      *)
+        echo "Invalid choice."
+        ;;
+    esac
+  done
+}
 
 # --- Main dispatch ---
 init_state_dir
