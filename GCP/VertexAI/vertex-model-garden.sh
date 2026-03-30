@@ -185,8 +185,52 @@ litellm_is_running() {
 # cmd_generate_config(), show_banner(), menu_loop() are defined in subsequent tasks.
 # Stub them here so the script doesn't error:
 
-cmd_list()            { echo "Not yet implemented. See Task 2."; }
-cmd_configs()         { echo "Not yet implemented. See Task 2."; }
+cmd_list() {
+  local filter="${1:-}"
+  echo "Fetching deployable models from Model Garden (project=$PROJECT)..."
+  echo ""
+
+  if [[ -n "$filter" ]]; then
+    echo "Filter: $filter"
+    echo ""
+    gcloud ai model-garden models list \
+      --project="$PROJECT" \
+      --format="table(name, supportedActions.join(','))" 2>&1 \
+      | grep -i "$filter" || echo "No models matching '$filter'."
+  else
+    echo "TIP: Pass a filter to narrow results: vertex-model-garden.sh list llama"
+    echo ""
+    gcloud ai model-garden models list \
+      --project="$PROJECT" \
+      --format="table(name, supportedActions.join(','))" 2>&1 \
+      | head -80
+    echo ""
+    echo "(Showing first 80 results. Use a filter to narrow.)"
+  fi
+}
+
+cmd_configs() {
+  local model="${1:-}"
+  if [[ -z "$model" ]]; then
+    read -r -p "Model name (e.g. google/gemma2@gemma-2-9b): " model
+    model="${model#"${model%%[![:space:]]*}"}"
+    model="${model%"${model##*[![:space:]]}"}"
+  fi
+  if [[ -z "$model" ]]; then
+    echo "ERROR: Model name required."
+    return 1
+  fi
+
+  echo ""
+  echo "Deployment configurations for: $model"
+  echo "============================================="
+  gcloud ai model-garden models list-deployment-config \
+    --model="$model" \
+    --project="$PROJECT" 2>&1
+
+  echo ""
+  echo "Use these machine-type and accelerator values with the 'deploy' command."
+}
 cmd_deploy()          { echo "Not yet implemented. See Task 3."; }
 cmd_status()          { echo "Not yet implemented. See Task 4."; }
 cmd_undeploy()        { echo "Not yet implemented. See Task 4."; }
