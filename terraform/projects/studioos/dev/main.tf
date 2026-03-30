@@ -45,4 +45,6 @@ module "cloud_run" {
   allow_unauthenticated = var.studioos_allow_unauthenticated
   timeout               = var.studioos_request_timeout
   labels                = local.labels
+
+  cloud_sql_connection_names = var.studioos_cloud_sql_connection_names
 }

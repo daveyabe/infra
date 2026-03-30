@@ -78,3 +78,9 @@ variable "timeout" {
   type        = string
   default     = "300s"
 }
+
+variable "cloud_sql_connection_names" {
+  description = "Cloud SQL connection names (project:region:instance). When set, mounts the proxy at /cloudsql; use DATABASE_URL with host=/cloudsql/..."
+  type        = list(string)
+  default     = []
+}

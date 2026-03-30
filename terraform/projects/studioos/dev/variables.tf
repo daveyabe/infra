@@ -72,3 +72,10 @@ variable "studioos_request_timeout" {
   type        = string
   default     = "300s"
 }
+
+# --- studioos: Cloud SQL (existing instance) ---
+variable "studioos_cloud_sql_connection_names" {
+  description = "Existing Cloud SQL instances to attach (project:region:instance). Empty skips attachment. Use DATABASE_URL unix-socket form in studioos_env (see tfvars comment). Private-IP-only DBs need a VPC connector outside this module."
+  type        = list(string)
+  default     = []
+}
