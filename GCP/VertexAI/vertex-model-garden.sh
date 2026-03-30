@@ -8,6 +8,8 @@ DEPLOYMENTS_DIR="${STATE_DIR}/deployments"
 CONFIG_FILE="${STATE_DIR}/config"
 LITELLM_CONFIG="${HOME}/.litellm/config.yaml"
 LITELLM_PORT=4000
+# Must match ~/.litellm/config.yaml general_settings.master_key (gastown_install_litellm_proxy default).
+LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY:-sk-gastown-litellm}"
 
 usage() {
   cat <<'EOF'
@@ -174,9 +176,10 @@ make_alias() {
   echo "vertex-${short}"
 }
 
-# Check if LiteLLM proxy is running
+# Check if LiteLLM proxy is running (health endpoint requires Authorization when master_key is set)
 litellm_is_running() {
-  curl -sf "http://localhost:${LITELLM_PORT}/health" &>/dev/null
+  curl -sf -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" \
+    "http://127.0.0.1:${LITELLM_PORT}/health" &>/dev/null
 }
 
 # --- Subcommand dispatch (at bottom of file) ---
