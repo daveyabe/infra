@@ -231,7 +231,160 @@ cmd_configs() {
   echo ""
   echo "Use these machine-type and accelerator values with the 'deploy' command."
 }
-cmd_deploy()          { echo "Not yet implemented. See Task 3."; }
+
+cmd_deploy() {
+  local model="" machine_type="" accel_type="" accel_count=""
+  local eula_reply eula_flag="" proceed search_term
+
+  # --- Step 1: Model selection ---
+  read -r -p "Model to deploy (e.g. google/gemma2@gemma-2-9b, or '?' to search): " model
+  model="${model#"${model%%[![:space:]]*}"}"
+  model="${model%"${model##*[![:space:]]}"}"
+  if [[ "$model" == "?" ]]; then
+    read -r -p "Search term: " search_term
+    cmd_list "$search_term"
+    echo ""
+    read -r -p "Model to deploy: " model
+    model="${model#"${model%%[![:space:]]*}"}"
+    model="${model%"${model##*[![:space:]]}"}"
+  fi
+  if [[ -z "$model" ]]; then
+    echo "ERROR: Model name required."
+    return 1
+  fi
+
+  # --- Step 2: Show and select hardware config ---
+  echo ""
+  echo "Fetching deployment configurations for $model..."
+  gcloud ai model-garden models list-deployment-config \
+    --model="$model" --project="$PROJECT" 2>&1
+  echo ""
+  read -r -p "Machine type (e.g. g2-standard-12, or Enter for default): " machine_type
+  machine_type="${machine_type#"${machine_type%%[![:space:]]*}"}"
+  machine_type="${machine_type%"${machine_type##*[![:space:]]}"}"
+
+  if [[ -n "$machine_type" ]]; then
+    read -r -p "Accelerator type (e.g. NVIDIA_L4, or Enter to skip): " accel_type
+    accel_type="${accel_type#"${accel_type%%[![:space:]]*}"}"
+    accel_type="${accel_type%"${accel_type##*[![:space:]]}"}"
+    if [[ -n "$accel_type" ]]; then
+      read -r -p "Accelerator count [1]: " accel_count
+      accel_count="${accel_count:-1}"
+    fi
+  fi
+
+  # --- Step 3: Hugging Face token for gated models ---
+  load_config
+  if [[ "$model" == *llama* || "$model" == *mistral* || "$model" == *falcon* ]]; then
+    if [[ -z "${HF_TOKEN:-}" ]]; then
+      echo ""
+      echo "This model may be gated on Hugging Face. A HF access token may be required."
+      echo "Get one at: https://huggingface.co/settings/tokens"
+      read -r -p "Hugging Face token (or Enter to skip): " HF_TOKEN
+    fi
+  fi
+
+  # --- Step 4: EULA ---
+  echo ""
+  echo "WARNING: Many Model Garden models require EULA acceptance."
+  read -r -p "Accept EULA? [Y/n] " eula_reply
+  eula_flag=""
+  if [[ ! "$eula_reply" =~ ^[nN] ]]; then
+    eula_flag="--accept-eula"
+  fi
+
+  # --- Step 5: Cost warning ---
+  echo ""
+  echo "================================================================"
+  echo "  COST WARNING: GPU endpoints bill CONTINUOUSLY while deployed."
+  echo "  A single NVIDIA L4 (g2-standard-12) costs ~\$1.50/hour."
+  echo "  A100 or H100 instances cost \$5-30+/hour."
+  echo "  Use 'undeploy' to stop billing when done."
+  echo "================================================================"
+  read -r -p "Proceed with deployment? [y/N] " proceed
+  if [[ ! "$proceed" =~ ^[yY] ]]; then
+    echo "Cancelled."
+    return 0
+  fi
+
+  # --- Step 6: Build and run deploy command ---
+  local deployment_alias endpoint_name deploy_output deploy_rc
+  deployment_alias=$(make_alias "$model")
+  endpoint_name="gastown-${deployment_alias}"
+
+  local -a gcloud_deploy=(ai model-garden models deploy
+    --model="$model"
+    --project="$PROJECT"
+    --region="$REGION"
+    --endpoint-display-name="$endpoint_name")
+  [[ -n "$machine_type" ]] && gcloud_deploy+=(--machine-type="$machine_type")
+  [[ -n "$accel_type" ]]   && gcloud_deploy+=(--accelerator-type="$accel_type")
+  [[ -n "$accel_count" ]]  && gcloud_deploy+=(--accelerator-count="$accel_count")
+  [[ -n "$eula_flag" ]]    && gcloud_deploy+=("$eula_flag")
+  if [[ -n "${HF_TOKEN:-}" ]]; then
+    gcloud_deploy+=(--hugging-face-access-token="$HF_TOKEN")
+  fi
+
+  echo ""
+  echo "Running: gcloud ${gcloud_deploy[*]}"
+  echo "(This may take 15-30 minutes...)"
+  echo ""
+
+  deploy_output=$(mktemp)
+  gcloud "${gcloud_deploy[@]}" 2>&1 | tee "$deploy_output"
+  deploy_rc=${PIPESTATUS[0]}
+
+  if [[ $deploy_rc -ne 0 ]]; then
+    echo ""
+    echo "ERROR: Deployment failed (exit code $deploy_rc)."
+    echo "Common causes:"
+    echo "  - Insufficient GPU quota (request at: https://console.cloud.google.com/iam-admin/quotas)"
+    echo "  - Model requires EULA acceptance"
+    echo "  - Region does not support the requested accelerator"
+    rm -f "$deploy_output"
+    return 1
+  fi
+
+  # --- Step 7: Parse endpoint ID ---
+  local endpoint_id=""
+  endpoint_id=$(grep -oE 'endpoints/[0-9]+' "$deploy_output" | head -1 | sed 's|endpoints/||')
+
+  if [[ -z "$endpoint_id" ]]; then
+    echo "Could not parse endpoint ID from output. Searching by display name..."
+    endpoint_id=$(gcloud ai endpoints list \
+      --project="$PROJECT" --region="$REGION" \
+      --filter="displayName=${endpoint_name}" \
+      --format="value(name)" 2>/dev/null | grep -oE 'endpoints/[0-9]+' | head -1 | sed 's|endpoints/||')
+  fi
+
+  rm -f "$deploy_output"
+
+  if [[ -z "$endpoint_id" ]]; then
+    echo ""
+    echo "WARNING: Could not determine endpoint ID automatically."
+    echo "Run '${0##*/} status' to find your endpoint."
+    return 1
+  fi
+
+  # --- Step 8: Save state and print next steps ---
+  save_deployment "$deployment_alias" "$endpoint_id" "$model" "$REGION" "$PROJECT" \
+    "${machine_type:-auto}" "${accel_type:-auto}" "${accel_count:-0}"
+
+  echo ""
+  echo "============================================="
+  echo "  DEPLOYMENT SUCCESSFUL"
+  echo "  Alias:       $deployment_alias"
+  echo "  Endpoint ID: $endpoint_id"
+  echo "  Region:      $REGION"
+  echo "  Project:     $PROJECT"
+  echo "============================================="
+  echo ""
+  echo "Next step: generate Gas Town + Cursor config:"
+  echo "  ${0##*/} generate-config $deployment_alias"
+  echo ""
+  echo "To stop billing:"
+  echo "  ${0##*/} undeploy $deployment_alias"
+}
 cmd_status()          { echo "Not yet implemented. See Task 4."; }
 cmd_undeploy()        { echo "Not yet implemented. See Task 4."; }
 cmd_generate_config() { echo "Not yet implemented. See Task 5."; }
