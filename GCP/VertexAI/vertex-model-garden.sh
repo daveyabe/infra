@@ -470,7 +470,146 @@ cmd_undeploy() {
   echo ""
   echo "Undeploy complete. Billing for this endpoint has stopped."
 }
-cmd_generate_config() { echo "Not yet implemented. See Task 5."; }
+
+cmd_generate_config() {
+  local alias="${1:-}"
+
+  if [[ -z "$alias" ]]; then
+    echo "Saved deployments:"
+    list_saved_deployments
+    echo ""
+    read -r -p "Alias to generate config for: " alias
+    alias="${alias#"${alias%%[![:space:]]*}"}"
+    alias="${alias%"${alias##*[![:space:]]}"}"
+  fi
+  if [[ -z "$alias" ]]; then
+    echo "ERROR: Alias required. Run 'deploy' first or check 'status'."
+    return 1
+  fi
+
+  local state_file="${DEPLOYMENTS_DIR}/${alias}.json"
+  if [[ ! -f "$state_file" ]]; then
+    echo "ERROR: No saved deployment for '${alias}'."
+    echo "If you deployed manually, create ${state_file} with endpoint_id, model, region, project."
+    return 1
+  fi
+
+  local endpoint_id model region project
+  endpoint_id=$(grep -o '"endpoint_id": *"[^"]*"' "$state_file" | head -1 | cut -d'"' -f4)
+  model=$(grep -o '"model": *"[^"]*"' "$state_file" | head -1 | cut -d'"' -f4)
+  region=$(grep -o '"region": *"[^"]*"' "$state_file" | head -1 | cut -d'"' -f4)
+  project=$(grep -o '"project": *"[^"]*"' "$state_file" | head -1 | cut -d'"' -f4)
+
+  local raw_predict_url="https://${region}-aiplatform.googleapis.com/v1/projects/${project}/locations/${region}/endpoints/${endpoint_id}"
+
+  echo ""
+  echo "============================================================"
+  echo "  GAS TOWN + CURSOR CONFIGURATION"
+  echo "  Model:    $model"
+  echo "  Alias:    $alias"
+  echo "  Endpoint: $endpoint_id"
+  echo "============================================================"
+  echo ""
+
+  if litellm_is_running; then
+    echo "--- OPTION A: LiteLLM Proxy (DETECTED RUNNING on :${LITELLM_PORT}) ---"
+    echo ""
+    echo "Step 1: Register this model with LiteLLM"
+    echo ""
+    echo "  Add to ~/.litellm/config.yaml under model_list:"
+    echo ""
+    echo "    - model_name: \"${alias}\""
+    echo "      litellm_params:"
+    echo "        model: \"vertex_ai/openai/${endpoint_id}\""
+    echo "        vertex_project: \"${project}\""
+    echo "        vertex_location: \"${region}\""
+    echo ""
+    echo "  Then restart LiteLLM:  systemctl --user restart litellm-proxy"
+    echo ""
+    echo "Step 2: Add model in Cursor IDE"
+    echo ""
+    echo "  Cursor Settings (Cmd+Shift+P > Cursor Settings) > Models > Add Model"
+    echo "    Provider:  OpenAI Compatible"
+    echo "    Name:      ${alias}"
+    echo "    Base URL:  http://localhost:${LITELLM_PORT}/v1"
+    echo "    API Key:   sk-gastown-litellm"
+    echo ""
+  else
+    echo "--- OPTION A: LiteLLM Proxy (NOT RUNNING) ---"
+    echo ""
+    echo "  LiteLLM is not detected on port ${LITELLM_PORT}."
+    echo "  To install: source the gastown_install_litellm_proxy() function"
+    echo "  from /opt/gastown/data/engineering/scripts/gastown-host-tools.sh"
+    echo ""
+  fi
+
+  echo "--- OPTION B: Manual Token (no proxy needed, token expires hourly) ---"
+  echo ""
+  echo "Step 1: Get a fresh GCP access token"
+  echo ""
+  echo "  gcloud auth print-access-token"
+  echo ""
+  echo "Step 2: Add model in Cursor IDE"
+  echo ""
+  echo "  Cursor Settings > Models > Add Model"
+  echo "    Provider:  OpenAI Compatible"
+  echo "    Name:      ${alias}"
+  echo "    Base URL:  ${raw_predict_url}"
+  echo "    API Key:   <paste token from step 1>"
+  echo ""
+  echo "  NOTE: Tokens expire after ~1 hour. Repeat step 1 and update the key."
+  echo ""
+
+  echo "--- GAS TOWN CONFIGURATION (same for both options) ---"
+  echo ""
+  echo "Add this to /opt/gastown/data/settings/config.json under \"agents\":"
+  echo ""
+  echo "    \"${alias}\": {"
+  echo "      \"provider\": \"cursor\","
+  echo "      \"command\": \"cursor-agent\","
+  echo "      \"args\": [\"-f\", \"--model\", \"${alias}\"]"
+  echo "    }"
+  echo ""
+  echo "To set as town default:"
+  echo "  Change \"default_agent\" to \"${alias}\""
+  echo ""
+  echo "To assign to specific roles, add to \"role_agents\":"
+  echo "  \"polecat\": \"${alias}\""
+  echo "  \"crew\": \"${alias}\""
+  echo ""
+  echo "--- FULL config.json EXAMPLE ---"
+  echo ""
+  cat <<JSONEOF
+{
+  "type": "town-settings",
+  "version": 1,
+  "default_agent": "cursor-composer2",
+  "agents": {
+    "cursor-composer2": {
+      "provider": "cursor",
+      "command": "cursor-agent",
+      "args": ["-f", "--model", "composer-2"]
+    },
+    "${alias}": {
+      "provider": "cursor",
+      "command": "cursor-agent",
+      "args": ["-f", "--model", "${alias}"]
+    }
+  },
+  "role_agents": {
+    "mayor": "cursor-composer2",
+    "deacon": "cursor-composer2",
+    "witness": "${alias}",
+    "refinery": "cursor-composer2",
+    "polecat": "${alias}",
+    "crew": "cursor-composer2"
+  }
+}
+JSONEOF
+  echo ""
+  echo "============================================================"
+}
+
 show_banner()         { echo "  Vertex AI Model Garden -- Gas Town"; echo ""; }
 menu_loop()           { echo "Not yet implemented. See Task 7."; }
 
