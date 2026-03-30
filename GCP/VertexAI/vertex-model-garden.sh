@@ -385,8 +385,91 @@ cmd_deploy() {
   echo "To stop billing:"
   echo "  ${0##*/} undeploy $deployment_alias"
 }
-cmd_status()          { echo "Not yet implemented. See Task 4."; }
-cmd_undeploy()        { echo "Not yet implemented. See Task 4."; }
+cmd_status() {
+  echo "=== Saved deployments (local state) ==="
+  list_saved_deployments
+  echo ""
+  echo "=== Live Vertex AI endpoints (project=$PROJECT, region=$REGION) ==="
+  gcloud ai endpoints list \
+    --project="$PROJECT" \
+    --region="$REGION" \
+    --format="table(name.basename(), displayName, deployedModels[0].id, createTime)" 2>&1
+}
+
+cmd_undeploy() {
+  local alias="${1:-}"
+
+  if [[ -z "$alias" ]]; then
+    echo "Saved deployments:"
+    list_saved_deployments
+    echo ""
+    read -r -p "Alias to undeploy (or endpoint ID): " alias
+    alias="${alias#"${alias%%[![:space:]]*}"}"
+    alias="${alias%"${alias##*[![:space:]]}"}"
+  fi
+  if [[ -z "$alias" ]]; then
+    echo "ERROR: Alias or endpoint ID required."
+    return 1
+  fi
+
+  local endpoint_id="" deployed_model_id=""
+
+  if [[ -f "${DEPLOYMENTS_DIR}/${alias}.json" ]]; then
+    endpoint_id=$(grep -o '"endpoint_id": *"[^"]*"' "${DEPLOYMENTS_DIR}/${alias}.json" | head -1 | cut -d'"' -f4)
+  else
+    endpoint_id="$alias"
+  fi
+
+  if [[ -z "$endpoint_id" ]]; then
+    echo "ERROR: Could not resolve endpoint ID for '$alias'."
+    return 1
+  fi
+
+  echo "Endpoint ID: $endpoint_id"
+  echo ""
+
+  deployed_model_id=$(gcloud ai endpoints describe "$endpoint_id" \
+    --project="$PROJECT" --region="$REGION" \
+    --format="value(deployedModels[0].id)" 2>/dev/null)
+
+  echo "================================================================"
+  echo "  WARNING: This will undeploy the model and delete the endpoint."
+  echo "  Endpoint: $endpoint_id"
+  echo "  Deployed model: ${deployed_model_id:-unknown}"
+  echo "================================================================"
+  read -r -p "Proceed? [y/N] " confirm
+  if [[ ! "$confirm" =~ ^[yY] ]]; then
+    echo "Cancelled."
+    return 0
+  fi
+
+  if [[ -n "$deployed_model_id" ]]; then
+    echo "Undeploying model ${deployed_model_id} from endpoint ${endpoint_id}..."
+    gcloud ai endpoints undeploy-model "$endpoint_id" \
+      --project="$PROJECT" \
+      --region="$REGION" \
+      --deployed-model-id="$deployed_model_id" \
+      --quiet 2>&1
+    local rc=$?
+    if [[ $rc -ne 0 ]]; then
+      echo "WARNING: undeploy-model failed (rc=$rc). Trying to delete endpoint anyway..."
+    fi
+  fi
+
+  echo "Deleting endpoint ${endpoint_id}..."
+  gcloud ai endpoints delete "$endpoint_id" \
+    --project="$PROJECT" \
+    --region="$REGION" \
+    --quiet 2>&1
+
+  if [[ -f "${DEPLOYMENTS_DIR}/${alias}.json" ]]; then
+    rm -f "${DEPLOYMENTS_DIR}/${alias}.json"
+    echo "Removed local state for '$alias'."
+  fi
+
+  echo ""
+  echo "Undeploy complete. Billing for this endpoint has stopped."
+}
 cmd_generate_config() { echo "Not yet implemented. See Task 5."; }
 show_banner()         { echo "  Vertex AI Model Garden -- Gas Town"; echo ""; }
 menu_loop()           { echo "Not yet implemented. See Task 7."; }
