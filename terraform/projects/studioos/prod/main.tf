@@ -1,4 +1,4 @@
-# studioos - Dev Environment
+# studioos - Prod Environment
 #
 # Artifact Registry (Docker) + Cloud Run service.
 
@@ -13,6 +13,9 @@ locals {
   })
   # Full container image: registry URL / image name : tag
   backend_image = "${module.artifact_registry.repository_url}/${local.service_name}:${var.studioos_image_tag}"
+
+  # Direct VPC egress always uses the regional subnet named "default" (same region as Cloud Run).
+  studioos_direct_vpc_default_subnetwork = "projects/${var.gcp_project_id}/regions/${var.region}/subnetworks/default"
 }
 
 # Artifact Registry: Docker repository
@@ -45,4 +48,11 @@ module "cloud_run" {
   allow_unauthenticated = var.studioos_allow_unauthenticated
   timeout               = var.studioos_request_timeout
   labels                = local.labels
+
+  cloud_sql_connection_names = var.studioos_cloud_sql_connection_names
+
+  direct_vpc_network    = var.studioos_direct_vpc_network
+  direct_vpc_subnetwork = local.studioos_direct_vpc_default_subnetwork
+  direct_vpc_tags       = var.studioos_direct_vpc_tags
+  vpc_access_egress     = var.studioos_vpc_access_egress
 }

@@ -1,0 +1,80 @@
+# Example terraform.tfvars for studioos/prod
+#
+# Copy to terraform.tfvars and customize values.
+# Do NOT commit terraform.tfvars (contains sensitive data).
+#
+# studioos_env mirrors os/.env.example for Cloud Run. Fill secrets and
+# replace DATABASE_URL with your prod DB URL (not localhost on Cloud Run).
+#
+# To generate studioos_env from os/.env (review output; contains secrets):
+#   python3 ../../../scripts/generate-studioos-env-from-dotenv.py /path/to/os/.env > fragment.hcl
+
+gcp_project_id = "your-gcp-project-id"
+region         = "northamerica-northeast2"
+
+studioos_image_tag             = "prodlatest"
+studioos_port                  = 3000
+studioos_min_instances         = 1
+studioos_max_instances         = 10
+studioos_cpu                   = "1"
+studioos_memory                = "512Mi"
+studioos_allow_unauthenticated = false
+studioos_request_timeout       = "300s"
+
+# Direct VPC: subnet is always "default" in var.region (wired in main.tf).
+
+# Optional: Cloud SQL unix socket — see dev/terraform.tfvars for DATABASE_URL shape.
+# studioos_cloud_sql_connection_names = ["your-project:northamerica-northeast2:prodstudioos"]
+
+studioos_env = {
+  NOTION_API_KEY                                 = ""
+  NOTION_IDEA_DATABASE_ID                        = ""
+  NOTION_PROSPECTS_DATABASE_ID                   = ""
+  NOTION_CONTACTS_DATABASE_ID                    = ""
+  NOTION_INSIGHT_BRIEFS_DATA_SOURCE_ID           = ""
+  NOTION_TEST_VENTURE_ID                         = ""
+  NOTION_VENTURE_ACTIVATION_PROPERTY             = "Decision"
+  NOTION_VENTURE_ACTIVATION_VALUES               = "Approved for Validation"
+  NOTION_PROSPECT_VENTURE_RELATION_PROPERTY      = "Idea database"
+  NOTION_PROSPECT_VENTURE_RELATION_PROPERTY_TYPE = "select"
+  NOTION_PROSPECT_GATE_SUMMARY_PROPERTY          = ""
+  NOTION_PROSPECT_GATE_STATE_PROPERTY            = ""
+
+  PROSPEO_API_KEY = ""
+
+  LANGFUSE_PUBLIC_KEY = ""
+  LANGFUSE_SECRET_KEY = ""
+
+  DATABASE_URL = "postgresql://user:pass@localhost:5432/studioos"
+
+  GOOGLE_CLOUD_PROJECT   = "your-gcp-project-id"
+  GOOGLE_VERTEX_PROJECT  = "your-gcp-project-id"
+  GOOGLE_VERTEX_LOCATION = "us-central1"
+  GCP_REGION             = "northamerica-northeast2"
+
+  SETTINGS_SECRET_KEY         = ""
+  INTEGRATIONS_SETUP_SECRET   = ""
+
+  CRON_SECRET                   = ""
+  CRON_RECONCILE_WINDOW_MINUTES = "1440"
+  EVENT_INGRESS_SECRET          = ""
+  QUEUE_WORKER_SECRET           = ""
+
+  DEFAULT_BOOKING_URL          = ""
+  SENDING_DOMAIN               = ""
+  SENDING_DOMAIN_REGISTERED_AT = ""
+  SENDER_NAME                  = ""
+  PHYSICAL_ADDRESS             = ""
+
+  NODE_ENV            = "production"
+  USE_MOCK_PROVIDERS  = "false"
+  QUEUE_PROVIDER      = "database"
+  USE_EVENT_INGRESS   = "false"
+  USE_QUEUE_WORKER    = "true"
+  CRON_RECONCILE_ONLY = "true"
+  REAL_GATE_MODE      = "false"
+
+  NEXT_PUBLIC_SPOTIFY_UNIVERSE_PLAYLIST_ID = ""
+
+  LOG_LEVEL = "info"
+}

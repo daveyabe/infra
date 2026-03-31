@@ -84,3 +84,33 @@ variable "cloud_sql_connection_names" {
   type        = list(string)
   default     = []
 }
+
+# Direct VPC egress (recommended for private IP Cloud SQL without a Serverless VPC Access connector).
+variable "direct_vpc_network" {
+  description = "VPC network name or full resource name. Optional if subnetwork fully specifies the network."
+  type        = string
+  default     = ""
+}
+
+variable "direct_vpc_subnetwork" {
+  description = "Subnet for Cloud Run to attach for outbound traffic (same region as Cloud Run). When non-empty, enables Direct VPC egress."
+  type        = string
+  default     = ""
+}
+
+variable "direct_vpc_tags" {
+  description = "Optional VPC network tags for the Cloud Run network interface (e.g. for firewall targeting)."
+  type        = list(string)
+  default     = []
+}
+
+variable "vpc_access_egress" {
+  description = "With Direct VPC: PRIVATE_RANGES_ONLY sends only private destinations through the VPC (default). ALL_TRAFFIC sends all egress via the VPC."
+  type        = string
+  default     = "PRIVATE_RANGES_ONLY"
+
+  validation {
+    condition     = contains(["ALL_TRAFFIC", "PRIVATE_RANGES_ONLY"], var.vpc_access_egress)
+    error_message = "vpc_access_egress must be ALL_TRAFFIC or PRIVATE_RANGES_ONLY."
+  }
+}
