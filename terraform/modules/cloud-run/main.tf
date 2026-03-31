@@ -93,6 +93,15 @@ resource "google_cloud_run_v2_service" "service" {
     }
   }
 
+  # deploy.yml owns container env vars (committed .env.cloud-run.* + GitHub Secrets).
+  # Terraform still seeds env on initial apply via var.env, but subsequent changes
+  # come from CI — ignore_changes prevents terraform apply from reverting them.
+  lifecycle {
+    ignore_changes = [
+      template[0].containers[0].env,
+    ]
+  }
+
   depends_on = [google_project_iam_member.cloud_run_cloudsql_client]
 }
 
