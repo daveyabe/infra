@@ -108,7 +108,6 @@ redundancy. Below is the networking and compute layout for one region.
 │  │  │  │ │          │ │  │  │  │ │          │ │  │  │  │ │          │ │  │     │ │
 │  │  │  │ │ api-svc  │ │  │  │  │ │ api-svc  │ │  │  │  │ │ api-svc  │ │  │     │ │
 │  │  │  │ │ web-svc  │ │  │  │  │ │ web-svc  │ │  │  │  │ │ web-svc  │ │  │     │ │
-│  │  │  │ │ worker   │ │  │  │  │ │ worker   │ │  │  │  │ │ worker   │ │  │     │ │
 │  │  │  │ └──────────┘ │  │  │  │ └──────────┘ │  │  │  │ └──────────┘ │  │     │ │
 │  │  │  └──────────────┘  │  │  └──────────────┘  │  │  └──────────────┘  │     │ │
 │  │  │                    │  │                    │  │                    │     │ │
@@ -130,65 +129,46 @@ redundancy. Below is the networking and compute layout for one region.
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Async / Event-Driven Processing
+### Async Processing
 
-Asynchronous workloads run on a combination of SQS queues, Lambda functions, and
-ECS tasks triggered by EventBridge. This decouples long-running work from the
-synchronous request path.
+Asynchronous work uses the lightest-weight pattern available on AWS: **SQS +
+Lambda**. ECS services enqueue messages to SQS; Lambda functions are triggered
+automatically via SQS event source mappings (no polling code). Failed messages
+land in a dead-letter queue for investigation.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                        EVENT-DRIVEN / ASYNC LAYER                           │
+│                           ASYNC LAYER                                        │
 │                                                                              │
-│                                                                              │
-│    ┌──────────┐      ┌───────────┐      ┌──────────────────┐                │
-│    │ API Svc  │─────►│    SQS    │─────►│   ECS Task       │                │
-│    │ (ECS)    │      │  Queues   │      │   (worker svc)   │                │
-│    └──────────┘      │           │      │   long-running   │                │
-│         │            │ ┌───────┐ │      │   batch jobs     │                │
-│         │            │ │ DLQ   │ │      └──────────────────┘                │
-│         │            │ └───┬───┘ │                                          │
-│         │            └─────┼─────┘                                          │
-│         │                  │                                                 │
-│         │                  ▼                                                 │
-│         │            ┌───────────┐      ┌──────────────────┐                │
-│         │            │CloudWatch │─────►│   SNS Alert      │                │
-│         │            │  Alarm    │      │   (Ops Team)     │                │
-│         │            └───────────┘      └──────────────────┘                │
+│    ┌──────────┐      ┌───────────────┐      ┌──────────────────┐            │
+│    │ API Svc  │─────►│  SQS Queue    │─────►│  Lambda Fn       │            │
+│    │ (ECS)    │      │               │ event│  (process job,   │            │
+│    └──────────┘      │  ┌─────────┐  │source│   send email,    │            │
+│         │            │  │  DLQ    │  │mapping│   resize image, │            │
+│         │            │  └────┬────┘  │      │   etc.)          │            │
+│         │            └───────┼───────┘      └──────────────────┘            │
+│         │                    │                                               │
+│         │                    ▼                                               │
+│         │            ┌──────────────┐       ┌──────────────────┐            │
+│         │            │  CloudWatch  │──────►│  SNS Alert       │            │
+│         │            │  Alarm (DLQ  │       │  (Ops Team)      │            │
+│         │            │   depth > 0) │       └──────────────────┘            │
+│         │            └──────────────┘                                       │
 │         │                                                                    │
-│         │            ┌───────────┐      ┌──────────────────┐                │
-│         ├───────────►│EventBridge│─────►│  Lambda Fn       │                │
-│         │            │  Rules    │      │  (lightweight    │                │
-│         │            │           │      │   transforms,    │                │
-│         │            │ Scheduled │      │   notifications, │                │
-│         │            │ + Event   │      │   webhooks)      │                │
-│         │            └───────────┘      └──────┬───────────┘                │
-│         │                                      │                            │
-│         │            ┌───────────┐              │                            │
-│         ├───────────►│    SNS    │◄─────────────┘                            │
-│         │            │  Topics   │                                           │
-│         │            │  (fan-out)│──────┬────────────────┐                   │
-│         │            └───────────┘      │                │                   │
-│         │                               ▼                ▼                   │
-│         │                         ┌──────────┐    ┌──────────┐              │
-│         │                         │  SQS Q1  │    │  SQS Q2  │              │
-│         │                         │  (email) │    │  (audit) │              │
-│         │                         └──────────┘    └──────────┘              │
+│         │            Additional queues follow the same pattern:              │
 │         │                                                                    │
-│         │            ┌───────────┐      ┌──────────────────┐                │
-│         └───────────►│  Kinesis  │─────►│  Lambda / Firehose│               │
-│                      │  Data     │      │  → S3 Data Lake   │               │
-│                      │  Streams  │      └──────────────────┘                │
-│                      └───────────┘                                          │
+│         │            ┌───────────────┐      ┌──────────────────┐            │
+│         ├───────────►│  SQS Queue    │─────►│  Lambda Fn       │            │
+│         │            │  (notifs)     │      │  (notifications) │            │
+│         │            └───────────────┘      └──────────────────┘            │
+│         │                                                                    │
+│         │            ┌───────────────┐      ┌──────────────────┐            │
+│         └───────────►│  SQS Queue    │─────►│  Lambda Fn       │            │
+│                      │  (audit)      │      │  (audit logging) │            │
+│                      └───────────────┘      └──────────────────┘            │
 │                                                                              │
-│   ┌───────────────────────────────────────────────────────────────────┐      │
-│   │  Step Functions — complex multi-step async workflows             │      │
-│   │  (e.g. order processing, data pipeline orchestration)            │      │
-│   │                                                                   │      │
-│   │  Start ──► Validate ──► Process ──► Notify ──► Complete          │      │
-│   │                │                                                  │      │
-│   │                └──► Error ──► DLQ + SNS Alert                    │      │
-│   └───────────────────────────────────────────────────────────────────┘      │
+│   Each SQS queue has a paired DLQ. Lambda concurrency is controlled via      │
+│   reserved concurrency per function + SQS maxReceiveCount for retry policy.  │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -264,7 +244,7 @@ synchronous request path.
 │   │  ALB Access Logs → S3                                               │    │
 │   │  VPC Flow Logs → CloudWatch / S3                                    │    │
 │   │  CloudTrail → S3 + CloudWatch (API audit trail)                     │    │
-│   │  Centralized log aggregation via Kinesis Firehose → S3 data lake    │    │
+│   │  CloudWatch Logs subscription filters → S3 archival (if needed)     │    │
 │   └─────────────────────────────────────────────────────────────────────┘    │
 │                                                                              │
 │   ┌─── Deployment & Ops ────────────────────────────────────────────────┐    │
@@ -352,7 +332,7 @@ A complete list of every component in the architecture, grouped by function.
 |-----------|---------|
 | VPC (per region) | Isolated network, /16 CIDR, 3-AZ deployment |
 | Public subnets (3x) | ALB nodes, NAT Gateways |
-| Private subnets (3x) | ECS Fargate tasks (services, workers) |
+| Private subnets (3x) | ECS Fargate tasks (services) + Lambda (VPC-attached) |
 | Data subnets (3x) | RDS, ElastiCache (isolated, no internet route) |
 | NAT Gateway (per AZ) | Outbound internet for private subnets |
 | Internet Gateway | Inbound internet for public subnets |
@@ -365,25 +345,22 @@ A complete list of every component in the architecture, grouped by function.
 | Component | Purpose |
 |-----------|---------|
 | ECS Cluster (per region) | Fargate-backed container orchestration |
-| ECS Services (long-running) | api, web frontend, internal-api, worker (SQS consumer) |
+| ECS Services (long-running) | api, web frontend, internal-api |
 | ECS Tasks (one-off) | Migrations, batch jobs, scheduled tasks |
 | Task Definitions | Container config: image, CPU, memory, env, secrets, logging |
 | Service Discovery (Cloud Map) | Internal DNS for service-to-service communication |
 | Application Auto Scaling | Scale ECS services on CPU, memory, or custom metrics |
 | Capacity Providers | Fargate + Fargate Spot for cost optimization |
 
-#### Async / Event-Driven
+#### Async
 
 | Component | Purpose |
 |-----------|---------|
 | Amazon SQS | Message queues for async job dispatch |
 | SQS Dead-Letter Queues | Failed message capture for retry / investigation |
-| Amazon SNS | Fan-out pub/sub for notifications, event broadcast |
-| Amazon EventBridge | Event bus for scheduled tasks, cross-service events |
-| AWS Lambda | Lightweight event handlers (transforms, webhooks, glue) |
-| AWS Step Functions | Complex multi-step workflow orchestration |
-| Amazon Kinesis Data Streams | Real-time event streaming (high throughput) |
-| Kinesis Firehose | Stream → S3 data lake delivery |
+| AWS Lambda | SQS-triggered functions (event source mapping, no polling code) |
+| CloudWatch Alarms (DLQ) | Alert when messages land in a dead-letter queue |
+| SNS (alerting only) | Route DLQ / failure alarms to Ops (PagerDuty, Slack) |
 
 #### Data Stores
 
@@ -477,8 +454,8 @@ infrastructure/
 │   ├── alb.hcl
 │   ├── rds.hcl
 │   ├── redis.hcl
-│   ├── sqs.hcl
-│   ├── lambda.hcl
+│   ├── sqs.hcl                              # SQS queue + DLQ defaults
+│   ├── lambda.hcl                            # Lambda + SQS event source mapping
 │   ├── ecr.hcl
 │   ├── monitoring.hcl
 │   ├── security.hcl
@@ -493,18 +470,14 @@ infrastructure/
 │   ├── compute/
 │   │   ├── ecs-cluster/                    # ECS cluster + capacity providers
 │   │   ├── ecs-service/                    # ECS service + task def + auto scaling
-│   │   ├── ecs-scheduled-task/             # EventBridge-triggered ECS tasks
-│   │   └── lambda-function/                # Lambda with common config
+│   │   └── lambda-function/                # Lambda with common config (SQS-triggered)
 │   ├── data/
 │   │   ├── aurora/                         # Aurora PostgreSQL cluster
 │   │   ├── elasticache-redis/              # Redis replication group
 │   │   ├── s3-bucket/                      # S3 with encryption, versioning, CRR
 │   │   └── dynamodb/                       # DynamoDB table + GSIs
 │   ├── async/
-│   │   ├── sqs-queue/                      # SQS + DLQ pair
-│   │   ├── sns-topic/                      # SNS topic + subscriptions
-│   │   ├── eventbridge-rule/               # EventBridge rule + targets
-│   │   └── step-function/                  # Step Functions state machine
+│   │   └── sqs-queue/                      # SQS + DLQ pair
 │   ├── loadbalancing/
 │   │   ├── alb/                            # ALB + default rules
 │   │   └── alb-listener-rule/              # Per-service routing rules
@@ -558,10 +531,8 @@ infrastructure/
 │   │   │   │   │   └── terragrunt.hcl
 │   │   │   │   ├── web-service/
 │   │   │   │   │   └── terragrunt.hcl
-│   │   │   │   ├── worker-service/
-│   │   │   │   │   └── terragrunt.hcl
-│   │   │   │   └── scheduled-tasks/
-│   │   │   │       └── terragrunt.hcl
+│   │   │   │   └── async-functions/
+│   │   │   │       └── terragrunt.hcl      # Lambda fns + SQS event source mappings
 │   │   │   ├── data/
 │   │   │   │   ├── aurora/
 │   │   │   │   │   └── terragrunt.hcl
@@ -570,12 +541,8 @@ infrastructure/
 │   │   │   │   └── s3/
 │   │   │   │       └── terragrunt.hcl
 │   │   │   ├── async/
-│   │   │   │   ├── order-queue/
-│   │   │   │   │   └── terragrunt.hcl
-│   │   │   │   ├── notification-topic/
-│   │   │   │   │   └── terragrunt.hcl
-│   │   │   │   └── data-pipeline/
-│   │   │   │       └── terragrunt.hcl
+│   │   │   │   └── queues/
+│   │   │   │       └── terragrunt.hcl      # SQS queues + DLQs
 │   │   │   ├── loadbalancing/
 │   │   │   │   └── alb/
 │   │   │   │       └── terragrunt.hcl
@@ -727,7 +694,7 @@ branches and environment promotion.
     ┌─────────────────┼──────────────────┐
     │                 │                  │
     ▼                 ▼                  ▼
-feat/add-api      fix/redis-config    feat/new-worker
+feat/add-api      fix/redis-config    feat/add-queue
     │                 │                  │
     │  PR + plan      │  PR + plan       │  PR + plan
     │  review         │  review          │  review
@@ -754,7 +721,7 @@ feat/add-api      fix/redis-config    feat/new-worker
 4. Merge to `main` auto-applies to **dev** environment
 5. **Staging** deploy is triggered manually via workflow_dispatch
 6. **Prod** deploy requires manual trigger + GitHub Environment approval
-7. Commits reference the change purpose (e.g. "feat(ecs): add worker service scaling")
+7. Commits reference the change purpose (e.g. "feat(ecs): add api service auto scaling")
 
 **Branch naming:**
 
@@ -954,10 +921,8 @@ and vendor diversity for resilience.
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Container orchestration | ECS Fargate | No cluster management overhead, native AWS integration, simpler than EKS for service-oriented workloads |
-| Launch type | Fargate (+ Fargate Spot) | Serverless compute, no EC2 patching, Spot for cost on non-critical workers |
-| Async processing | SQS + ECS workers | Durable queues, ECS-based workers scale with queue depth, DLQ for failure handling |
-| Lightweight events | Lambda | Sub-second cold start for transforms, webhooks, glue logic |
-| Orchestration | Step Functions | Visual workflows for complex multi-step async processes |
+| Launch type | Fargate (+ Fargate Spot) | Serverless compute, no EC2 patching, Spot for cost on non-critical tasks |
+| Async processing | SQS + Lambda | Lightest-weight pattern: SQS for durable queuing, Lambda auto-triggered via event source mapping, DLQ for failures — no polling code, no dedicated workers |
 | Database | Aurora PostgreSQL Global | Sub-second RPO, fast cross-region failover, read replicas |
 | Cache | ElastiCache Redis Global Datastore | Cross-region replication, session/cache coherence |
 | DNS & Edge | Cloudflare | Cost-effective WAF + CDN + DNS, vendor diversity |
