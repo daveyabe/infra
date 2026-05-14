@@ -467,7 +467,7 @@ between stacks, and consistent backend/provider configuration.
 ```
 infrastructure/
 ├── terragrunt.hcl                          # Root Terragrunt config
-│                                            #   - remote_state block (S3 + DynamoDB)
+│                                            #   - remote_state block (S3 native locking)
 │                                            #   - generate "provider" block
 │                                            #   - common inputs
 │
@@ -659,7 +659,7 @@ terragrunt.hcl (root)                        ← S3 backend, provider, common ta
 
 | Feature | Purpose |
 |---------|---------|
-| `remote_state` | Auto-create S3 bucket + DynamoDB lock table per account/region |
+| `remote_state` | Auto-create S3 bucket per account/region (native S3 locking) |
 | `generate` | Inject provider blocks with region and assume-role config |
 | `dependency` | Express cross-stack dependencies (VPC before ECS, ALB before services) |
 | `include` | Inherit config from root + `_envcommon` partials |
@@ -857,13 +857,15 @@ simultaneously.
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                        TERRAFORM STATE                                       │
 │                                                                              │
-│  Backend: S3 + DynamoDB (per account)                                        │
+│  Backend: S3 with native locking (per account)                               │
+│  Terraform ≥1.10 — uses S3 conditional writes (no DynamoDB needed)           │
 │                                                                              │
 │  Bucket structure:                                                           │
 │  s3://company-terraform-state-{account-id}/                                  │
 │    └── {region}/                                                             │
 │        └── {component}/                                                      │
-│            └── terraform.tfstate                                             │
+│            ├── terraform.tfstate                                             │
+│            └── terraform.tfstate.tflock     ← S3 lock file                   │
 │                                                                              │
 │  Example paths:                                                              │
 │    prod/us-east-1/networking/vpc/terraform.tfstate                           │
@@ -871,7 +873,7 @@ simultaneously.
 │    prod/us-west-2/data/aurora/terraform.tfstate                              │
 │    staging/us-east-1/compute/api-service/terraform.tfstate                   │
 │                                                                              │
-│  Lock table: DynamoDB "terraform-locks" (per account)                        │
+│  Locking: S3 native (use_lockfile = true, conditional PutObject)             │
 │  Encryption: S3 SSE-KMS with customer-managed key                            │
 │  Versioning: Enabled (state history / rollback)                              │
 │  Access: IAM role per environment (CI/CD OIDC, no static creds)              │
@@ -911,5 +913,5 @@ and vendor diversity for resilience.
 | DNS & Edge | Cloudflare | Cost-effective WAF + CDN + DNS, vendor diversity |
 | IaC tool | Terraform + Terragrunt | DRY configs, dependency management, multi-account/region orchestration |
 | CI/CD auth | OIDC federation | No long-lived credentials, GitHub-native |
-| State backend | S3 + DynamoDB | Native Terraform support, encryption, locking |
+| State backend | S3 (native locking) | Terraform ≥1.10 S3 conditional writes, no DynamoDB lock table needed |
 | Multi-region strategy | Active/active (read), active/standby (write) | Read traffic served from nearest region, writes go to primary |
