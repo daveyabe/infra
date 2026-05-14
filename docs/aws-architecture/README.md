@@ -116,7 +116,6 @@ redundancy. Below is the networking and compute layout for one region.
 │  │  │  │ 10.0.21.0/24 │  │  │  │ 10.0.22.0/24 │  │  │  │ 10.0.23.0/24 │  │     │ │
 │  │  │  │              │  │  │  │              │  │  │  │              │  │     │ │
 │  │  │  │  RDS (repl.) │  │  │  │  RDS (repl.) │  │  │  │  RDS (repl.) │  │     │ │
-│  │  │  │  ElastiCache │  │  │  │  ElastiCache │  │  │  │  ElastiCache │  │     │ │
 │  │  │  └──────────────┘  │  │  └──────────────┘  │  │  └──────────────┘  │     │ │
 │  │  └────────────────────┘  └────────────────────┘  └────────────────────┘     │ │
 │  │                                                                             │ │
@@ -190,15 +189,6 @@ land in a dead-letter queue for investigation.
 │   │  │  Reader x2 │                  │  Reader x1 │                    │    │
 │   │  └────────────┘                  └────────────┘                    │    │
 │   │  Aurora Global Database (RPO < 1s, RTO < 1min failover)            │    │
-│   └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                              │
-│   ┌─────────────────────────────────────────────────────────────────────┐    │
-│   │  Amazon ElastiCache (Redis) — Multi-AZ Cluster Mode               │    │
-│   │                                                                     │    │
-│   │  ┌────────┐  ┌────────┐  ┌────────┐                               │    │
-│   │  │Primary │  │Replica │  │Replica │   Global Datastore for        │    │
-│   │  │ AZ-a   │  │ AZ-b   │  │ AZ-c   │   cross-region replication   │    │
-│   │  └────────┘  └────────┘  └────────┘                               │    │
 │   └─────────────────────────────────────────────────────────────────────┘    │
 │                                                                              │
 │   ┌─────────────────────────────────────────────────────────────────────┐    │
@@ -333,7 +323,7 @@ A complete list of every component in the architecture, grouped by function.
 | VPC (per region) | Isolated network, /16 CIDR, 3-AZ deployment |
 | Public subnets (3x) | ALB nodes, NAT Gateways |
 | Private subnets (3x) | ECS Fargate tasks (services) + Lambda (VPC-attached) |
-| Data subnets (3x) | RDS, ElastiCache (isolated, no internet route) |
+| Data subnets (3x) | RDS (isolated, no internet route) |
 | NAT Gateway (per AZ) | Outbound internet for private subnets |
 | Internet Gateway | Inbound internet for public subnets |
 | VPC Endpoints | PrivateLink for S3, ECR, CloudWatch, SQS, Secrets Manager, KMS |
@@ -367,7 +357,6 @@ A complete list of every component in the architecture, grouped by function.
 | Component | Purpose |
 |-----------|---------|
 | Aurora PostgreSQL (Global Database) | Primary relational DB with cross-region replication |
-| ElastiCache Redis (Global Datastore) | Caching, session store, rate limiting |
 | Amazon S3 | Object storage (assets, logs, backups) with CRR |
 | DynamoDB Global Tables (optional) | Low-latency key-value for sessions or config |
 | Amazon EFS (optional) | Shared filesystem for ECS tasks needing persistent volumes |
@@ -453,7 +442,6 @@ infrastructure/
 │   ├── vpc.hcl
 │   ├── alb.hcl
 │   ├── rds.hcl
-│   ├── redis.hcl
 │   ├── sqs.hcl                              # SQS queue + DLQ defaults
 │   ├── lambda.hcl                            # Lambda + SQS event source mapping
 │   ├── ecr.hcl
@@ -473,7 +461,6 @@ infrastructure/
 │   │   └── lambda-function/                # Lambda with common config (SQS-triggered)
 │   ├── data/
 │   │   ├── aurora/                         # Aurora PostgreSQL cluster
-│   │   ├── elasticache-redis/              # Redis replication group
 │   │   ├── s3-bucket/                      # S3 with encryption, versioning, CRR
 │   │   └── dynamodb/                       # DynamoDB table + GSIs
 │   ├── async/
@@ -535,8 +522,6 @@ infrastructure/
 │   │   │   │       └── terragrunt.hcl      # Lambda fns + SQS event source mappings
 │   │   │   ├── data/
 │   │   │   │   ├── aurora/
-│   │   │   │   │   └── terragrunt.hcl
-│   │   │   │   ├── redis/
 │   │   │   │   │   └── terragrunt.hcl
 │   │   │   │   └── s3/
 │   │   │   │       └── terragrunt.hcl
@@ -694,7 +679,7 @@ branches and environment promotion.
     ┌─────────────────┼──────────────────┐
     │                 │                  │
     ▼                 ▼                  ▼
-feat/add-api      fix/redis-config    feat/add-queue
+feat/add-api      fix/rds-config      feat/add-queue
     │                 │                  │
     │  PR + plan      │  PR + plan       │  PR + plan
     │  review         │  review          │  review
@@ -924,7 +909,6 @@ and vendor diversity for resilience.
 | Launch type | Fargate (+ Fargate Spot) | Serverless compute, no EC2 patching, Spot for cost on non-critical tasks |
 | Async processing | SQS + Lambda | Lightest-weight pattern: SQS for durable queuing, Lambda auto-triggered via event source mapping, DLQ for failures — no polling code, no dedicated workers |
 | Database | Aurora PostgreSQL Global | Sub-second RPO, fast cross-region failover, read replicas |
-| Cache | ElastiCache Redis Global Datastore | Cross-region replication, session/cache coherence |
 | DNS & Edge | Cloudflare | Cost-effective WAF + CDN + DNS, vendor diversity |
 | IaC tool | Terraform + Terragrunt | DRY configs, dependency management, multi-account/region orchestration |
 | CI/CD auth | OIDC federation | No long-lived credentials, GitHub-native |
