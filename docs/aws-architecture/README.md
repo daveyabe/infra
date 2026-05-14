@@ -202,9 +202,7 @@ land in a dead-letter queue for investigation.
 │   └─────────────────────────────────────────────────────────────────────┘    │
 │                                                                              │
 │   ┌─────────────────────────────────────────────────────────────────────┐    │
-│   │  Amazon DynamoDB Global Tables (optional, for session/config)      │    │
-│   │  Multi-region active-active with <1s replication                    │    │
-│   └─────────────────────────────────────────────────────────────────────┘    │
+│                                                                              │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -245,7 +243,7 @@ land in a dead-letter queue for investigation.
 │   │  AWS CodeDeploy (blue/green ECS deployments)                        │    │
 │   │  Systems Manager Parameter Store + Secrets Manager                  │    │
 │   │  AWS Config (resource compliance tracking)                          │    │
-│   │  AWS Backup (centralized backup policies for RDS, DynamoDB, EFS)    │    │
+│   │  AWS Backup (centralized backup policies for RDS, EFS)              │    │
 │   └─────────────────────────────────────────────────────────────────────┘    │
 │                                                                              │
 │   ┌─── Cost Management ────────────────────────────────────────────────┐    │
@@ -279,7 +277,6 @@ land in a dead-letter queue for investigation.
 │   │  Security Groups (per-service, least-privilege port access)         │    │
 │   │  NACLs (subnet-level allow/deny)                                    │    │
 │   │  VPC Endpoints (PrivateLink) — no internet traversal for AWS APIs   │    │
-│   │  AWS Shield Advanced (DDoS protection — complements Cloudflare)     │    │
 │   │  AWS Network Firewall (optional, for egress filtering)              │    │
 │   └─────────────────────────────────────────────────────────────────────┘    │
 │                                                                              │
@@ -297,7 +294,6 @@ land in a dead-letter queue for investigation.
 │   │  GuardDuty (threat detection — VPC flow, DNS, CloudTrail)           │    │
 │   │  Security Hub (aggregated findings, CIS benchmarks)                 │    │
 │   │  Inspector (container image vulnerability scanning in ECR)          │    │
-│   │  Macie (S3 sensitive data discovery — if PII is stored)             │    │
 │   └─────────────────────────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -358,7 +354,6 @@ A complete list of every component in the architecture, grouped by function.
 |-----------|---------|
 | Aurora PostgreSQL (Global Database) | Primary relational DB with cross-region replication |
 | Amazon S3 | Object storage (assets, logs, backups) with CRR |
-| DynamoDB Global Tables (optional) | Low-latency key-value for sessions or config |
 | Amazon EFS (optional) | Shared filesystem for ECS tasks needing persistent volumes |
 
 #### Container Registry
@@ -375,7 +370,6 @@ A complete list of every component in the architecture, grouped by function.
 | Component | Purpose |
 |-----------|---------|
 | AWS WAF (on ALB) | Layer 7 defense in depth behind Cloudflare |
-| AWS Shield Advanced | DDoS mitigation at AWS edge |
 | IAM Roles | Task execution role, task role (least privilege per service) |
 | OIDC Federation | GitHub Actions → IAM (no static credentials in CI/CD) |
 | KMS | Customer-managed encryption keys |
@@ -407,7 +401,6 @@ A complete list of every component in the architecture, grouped by function.
 | GuardDuty | Threat detection |
 | Security Hub | Centralized security findings |
 | Inspector | Container vulnerability scanning |
-| Macie (optional) | S3 sensitive data discovery |
 
 #### Cost & Backup
 
@@ -461,8 +454,7 @@ infrastructure/
 │   │   └── lambda-function/                # Lambda with common config (SQS-triggered)
 │   ├── data/
 │   │   ├── aurora/                         # Aurora PostgreSQL cluster
-│   │   ├── s3-bucket/                      # S3 with encryption, versioning, CRR
-│   │   └── dynamodb/                       # DynamoDB table + GSIs
+│   │   └── s3-bucket/                      # S3 with encryption, versioning, CRR
 │   ├── async/
 │   │   └── sqs-queue/                      # SQS + DLQ pair
 │   ├── loadbalancing/
